@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Django stuff:
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# If you use Django collectstatic
+/static/
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env.local
+.env.production
+.env.staging
+.env.test
+
+# Coverage / testing
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Migrations (optional – comment out if you want to track them)
+# */migrations/*
+
+# Byte-compiled / optimized / DLL files
+*.so
+
+# Backup / packaging
+*.bak
+*.tar
+*.zip
+*.egg-info/
+dist/
+build/
