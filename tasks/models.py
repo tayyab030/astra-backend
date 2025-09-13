@@ -1,0 +1,93 @@
+from django.db import models
+
+# Create your models here.
+from django.db import models
+from django.contrib.auth.models import User
+
+
+class Project(models.Model):
+    STATUS_CHOICES = [
+        ("on_track", "On Track"),
+        ("at_risk", "At Risk"),
+        ("off_track", "Off Track"),
+        ("on_hold", "On Hold"),
+        ("complete", "Complete"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="projects", null=True, blank=True)
+    title = models.CharField(max_length=255)
+    starred = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="on_track")
+    color = models.CharField(max_length=20, blank=True, null=True)  # hex code or color name
+    description = models.TextField(blank=True, null=True)
+    due_date = models.DateField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+
+
+class Section(models.Model):
+    title = models.CharField(max_length=255)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="sections")
+    order = models.IntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.title} ({self.project.title})"
+
+
+class Task(models.Model):
+    STATUS_CHOICES = [
+        ("incomplete", "Incomplete"),
+        ("completed", "Completed"),
+    ]
+
+    PRIORITY_CHOICES = [
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+        ("urgent", "Urgent"),
+    ]
+
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)  # store HTML
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="incomplete")
+    due_date = models.DateField(blank=True, null=True)
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="medium")
+
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name="tasks", blank=True, null=True)
+    parent_task = models.ForeignKey("self", on_delete=models.CASCADE, related_name="subtasks", blank=True, null=True)
+
+    attachments = models.JSONField(blank=True, null=True)  # store file paths or metadata as JSON
+
+    tags = models.ManyToManyField("Tag", related_name="tasks", blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+
+
+class Tag(models.Model):
+    name = models.CharField(max_length=50)
+    color = models.CharField(max_length=20, blank=True, null=True)  # hex code or color name
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Comment(models.Model):
+    content = models.TextField()  # store HTML comment
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Comment on {self.task.title} ({self.created_at:%Y-%m-%d})"
