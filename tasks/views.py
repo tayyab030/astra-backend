@@ -7,7 +7,7 @@ from tasks.models import Project
 from rest_framework import status
 from tasks.serializers.section_serializers import SectionSerializer
 from tasks.models import Section
-from django.db.models import Max, F
+from django.db.models import Max
 
 # all projects api
 @api_view(["GET", "POST"])
