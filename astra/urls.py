@@ -14,10 +14,21 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
 from django.contrib import admin
 from django.urls import path, include
 
+admin.site.site_header = "Astra Admin"
+admin.site.site_title = "Astra Admin Portal"
+admin.site.index_title = "Welcome to Astra Admin Portal"
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # path("api/", include("tasks.urls.project_urls")),
+    path("api/tasks/", include("tasks.urls")),
 ]
+
+if settings.DEBUG:
+    import debug_toolbar
+    urlpatterns += [
+        path("__debug__/", include(debug_toolbar.urls)),
+    ]

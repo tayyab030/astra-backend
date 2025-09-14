@@ -14,7 +14,7 @@ class Project(models.Model):
         ("complete", "Complete"),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="projects", null=True, blank=True)
+    # user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="projects", null=True, blank=True)
     title = models.CharField(max_length=255)
     starred = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="on_track")
@@ -28,6 +28,9 @@ class Project(models.Model):
     def __str__(self):
         return self.title
 
+    class Meta:
+        ordering = ["-created_at"]
+
 
 class Section(models.Model):
     title = models.CharField(max_length=255)
@@ -38,6 +41,9 @@ class Section(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.project.title})"
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 class Task(models.Model):
@@ -72,6 +78,9 @@ class Task(models.Model):
     def __str__(self):
         return self.title
 
+    class Meta:
+        ordering = ["-created_at"]
+
 
 class Tag(models.Model):
     name = models.CharField(max_length=50)
@@ -82,6 +91,9 @@ class Tag(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        ordering = ["-created_at"]
+
 
 class Comment(models.Model):
     content = models.TextField()  # store HTML comment
@@ -91,3 +103,6 @@ class Comment(models.Model):
 
     def __str__(self):
         return f"Comment on {self.task.title} ({self.created_at:%Y-%m-%d})"
+
+    class Meta:
+        ordering = ["-created_at"]
