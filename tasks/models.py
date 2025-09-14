@@ -55,7 +55,8 @@ class Section(models.Model):
         return f"{self.title} ({self.project.title})"
 
     class Meta:
-        ordering = ["-created_at"]
+        unique_together = ('project', 'order')  # enforce per-project uniqueness
+        ordering = ['order']
 
 
 class Task(models.Model):

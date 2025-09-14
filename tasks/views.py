@@ -7,6 +7,8 @@ from tasks.models import Project
 from rest_framework import status
 from tasks.serializers.section_serializers import SectionSerializer
 from tasks.models import Section
+from django.db.models import Max, F
+
 # all projects api
 @api_view(["GET", "POST"])
 def project_list(request):
@@ -50,31 +52,34 @@ def project_detail(request, pk):
         project.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-# all collections api
+# all sections api
 @api_view(["GET", "POST"])
-def collection_list(request):
+def section_list(request, project_id):
     if request.method == "GET":
-        collections = Section.objects.all()
-        serializer = SectionSerializer(collections, many=True)
+        sections = Section.objects.filter(project_id=project_id)
+        serializer = SectionSerializer(sections, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     elif request.method == "POST":
+        project = Project.objects.get(id=project_id)
+        last_order = project.sections.aggregate(max_order=Max('order'))['max_order']
+        next_order = (last_order + 1) if last_order is not None else 0
         serializer = SectionSerializer(data=request.data)
         if serializer.is_valid(raise_exception=True):
-            serializer.save()
+            serializer.save(project_id=project_id, order=next_order)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 @api_view(["GET", "PUT", "DELETE"])
-def collection_detail(request, pk):
+def section_detail(request, pk):
     pk_int = int(pk)
-    collection = get_object_or_404(Section, id=pk_int)
+    section = get_object_or_404(Section, id=pk_int)
     if request.method == "GET":
-        serializer = SectionSerializer(collection)
+        serializer = SectionSerializer(section)
         return Response(serializer.data, status=status.HTTP_200_OK)
     elif request.method == "PUT":
-        serializer = SectionSerializer(collection, data=request.data)
+        serializer = SectionSerializer(section, data=request.data)
         if serializer.is_valid(raise_exception=True):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
     elif request.method == "DELETE":
-        collection.delete()
+        section.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

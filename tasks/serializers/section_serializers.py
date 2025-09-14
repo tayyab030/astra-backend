@@ -9,4 +9,13 @@ class SectionSerializer(serializers.ModelSerializer):
             "id": {"read_only": True},
             "created_at": {"read_only": True},
             "updated_at": {"read_only": True},
+            "project": {"read_only": True},
+            "order": {"read_only": True},
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        request = self.context.get("request")
+        if request and request.method != "PUT":
+            self.fields["order"].read_only = True    
