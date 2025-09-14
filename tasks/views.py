@@ -7,11 +7,17 @@ from tasks.models import Project
 from rest_framework import status
 
 # all projects api
-@api_view()
+@api_view(["GET", "POST"])
 def project_list(request):
-    projects = Project.objects.all()
-    serializer = ProjectSerializer(projects, many=True)
-    return Response(serializer.data)
+    if request.method == "GET":
+        projects = Project.objects.all()
+        serializer = ProjectSerializer(projects, many=True)
+        return Response(serializer.data)
+    elif request.method == "POST":
+        serializer = ProjectSerializer(data=request.data)
+        if serializer.is_valid(raise_exception=True):
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 @api_view()
 def project_detail(request, pk):    

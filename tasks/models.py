@@ -3,6 +3,7 @@ from django.db import models
 # Create your models here.
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.validators import RegexValidator
 
 
 class Project(models.Model):
@@ -14,11 +15,22 @@ class Project(models.Model):
         ("complete", "Complete"),
     ]
 
+    hex_color_validator = RegexValidator(
+        regex=r'^#(?:[0-9a-fA-F]{3}){1,2}$',
+        message="Color must be a valid HEX code like #RRGGBB or #RGB."
+    )
+
     # user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="projects", null=True, blank=True)
     title = models.CharField(max_length=255)
     starred = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="on_track")
-    color = models.CharField(max_length=20, blank=True, null=True)  # hex code or color name
+    color = models.CharField(
+        max_length=7,  # "#RRGGBB" has 7 chars
+        blank=True,
+        null=True,
+        default="#1E1E1E",  # dark gray, good for dark mode
+        validators=[hex_color_validator]
+    )  
     description = models.TextField(blank=True, null=True)
     due_date = models.DateField(blank=True, null=True)
 
