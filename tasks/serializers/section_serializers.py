@@ -18,4 +18,11 @@ class SectionSerializer(serializers.ModelSerializer):
 
         request = self.context.get("request")
         if request and request.method != "PUT":
-            self.fields["order"].read_only = True    
+            self.fields["order"].read_only = True
+
+    def create(self, validated_data):
+        # Get project_id from context and set it for the section
+        project_id = self.context.get('project_id')
+        if project_id:
+            validated_data['project_id'] = project_id
+        return super().create(validated_data)    
