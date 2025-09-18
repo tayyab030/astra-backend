@@ -1,16 +1,11 @@
-from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view
+from rest_framework.viewsets import ModelViewSet
 from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
-from rest_framework.views import APIView
+from rest_framework.exceptions import NotFound
+from django.shortcuts import get_object_or_404
 from tasks.serializers.project_serializers import ProjectSerializer
 from tasks.models import Project
-from rest_framework import status
 from tasks.serializers.section_serializers import SectionSerializer
 from tasks.models import Section
-from django.db.models import Max
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
-from rest_framework.viewsets import ModelViewSet
 
 # all projects api
 # this viewset is used to create, retrieve, update and delete projects
@@ -68,36 +63,36 @@ class ProjectViewSet(ModelViewSet):
 #         return Response(status=status.HTTP_204_NO_CONTENT)
 
 # all sections api
-
-@api_view(["GET", "POST"])
-def section_list(request, project_id):
-    if request.method == "GET":
-        sections = Section.objects.filter(project_id=project_id)
-        serializer = SectionSerializer(sections, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    elif request.method == "POST":
-        project = Project.objects.get(id=project_id)
-        last_order = project.sections.aggregate(max_order=Max('order'))['max_order']
-        next_order = (last_order + 1) if last_order is not None else 0
-        serializer = SectionSerializer(data=request.data)
-        if serializer.is_valid(raise_exception=True):
-            serializer.save(project_id=project_id, order=next_order)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-@api_view(["GET", "PUT", "DELETE"])
-def section_detail(request, pk):
-    pk_int = int(pk)
-    section = get_object_or_404(Section, id=pk_int)
-    if request.method == "GET":
-        serializer = SectionSerializer(section)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    elif request.method == "PUT":
-        serializer = SectionSerializer(section, data=request.data)
-        if serializer.is_valid(raise_exception=True):
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-    elif request.method == "DELETE":
-        section.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+class SectionViewSet(ModelViewSet):
+    serializer_class = SectionSerializer
+    
+    def get_queryset(self):
+        """Filter sections by project_id from nested URL"""
+        project_id = self.kwargs.get('project_pk')  # Nested router uses 'project_pk'
+        if project_id:
+            # Validate that project_id is a valid integer
+            try:
+                project_id = int(project_id)
+            except (ValueError, TypeError):
+                raise NotFound("Invalid project ID. Expected a number.")
+            
+            # Validate that the project exists, raise 404 if not
+            get_object_or_404(Project, id=project_id)
+            return Section.objects.filter(project_id=project_id).order_by('order')
+        return Section.objects.all().order_by('order')
+    
+    def get_serializer_context(self):
+        """Add request context and project_id to serializer"""
+        context = {'request': self.request}
+        project_id = self.kwargs.get('project_pk')  # Nested router uses 'project_pk'
+        if project_id:
+            # Validate that project_id is a valid integer
+            try:
+                project_id = int(project_id)
+                context['project_id'] = project_id
+            except (ValueError, TypeError):
+                # Let the serializer handle the validation error
+                pass
+        return context
 
 # 1:52:00         https://www.youtube.com/watch?v=_WSzE8xjxMY&t=49s&ab_channel=evlearn

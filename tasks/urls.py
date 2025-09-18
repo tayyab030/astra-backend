@@ -1,15 +1,19 @@
 from django.urls import path, include
 from . import views
-from rest_framework.routers import SimpleRouter
+from rest_framework_nested import routers
 
-router = SimpleRouter()
+router = routers.DefaultRouter()
 router.register(r"projects", views.ProjectViewSet, basename="project")
 # router.register(r"sections", views.SectionViewSet, basename="section")
-# router.register(r"tasks", views.TaskViewSet, basename="task")
-# router.register(r"tags", views.TagViewSet, basename="tag")
+
+projects_router = routers.NestedDefaultRouter(router, r"projects", lookup="project")
+projects_router.register(r"sections", views.SectionViewSet, basename="project-section")
 
 urlpatterns = [
     path(r"", include(router.urls)),
+    path(r"", include(projects_router.urls)),
+    # Nested routing for sections under projects
+    # path("projects/<int:project_id>/sections/", views.SectionViewSet.as_view({'get': 'list', 'post': 'create'}), name="project-sections"),
     ]
 # [
 #     path("projects/", views.ProjectList.as_view(), name="project_list"),
