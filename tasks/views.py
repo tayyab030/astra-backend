@@ -16,52 +16,6 @@ class ProjectViewSet(ModelViewSet):
     def get_serializer_context(self):
         return {'request': self.request}
     
-    
-# class ProjectList(APIView):
-    # def project_list(request):
-        # def get(self, request):
-        #     projects = Project.objects.all()
-        #     serializer = ProjectSerializer(projects, many=True)
-        #     return Response(serializer.data, status=status.HTTP_200_OK)
-        # def post(self, request):
-        #     serializer = ProjectSerializer(data=request.data)
-        #     if serializer.is_valid(raise_exception=True):
-        #         serializer.save()
-        #         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-# class ProjectDetail(APIView):
-#     def get(self,request, pk):
-#         pk_int = int(pk)
-#         project = get_object_or_404(Project, id=pk_int)
-#         try:
-#             # Convert pk to integer to handle string/float inputs
-#             serializer = ProjectSerializer(project)
-#             return Response(serializer.data)
-#         except ValueError:
-#             # Handle case where pk cannot be converted to integer
-#             return Response(
-#                     {"error": "Invalid project ID. Expected an integer."}, 
-#                     status=status.HTTP_400_BAD_REQUEST
-#                 )
-#         except ValidationError as e:
-#             # Handle any validation errors from the serializer
-#             return Response(
-#                 {"error": str(e)}, 
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-#     def put(self, request, pk):
-#         pk_int = int(pk)
-#         project = get_object_or_404(Project, id=pk_int)
-#         serializer = ProjectSerializer(project, data=request.data)
-#         if serializer.is_valid(raise_exception=True):
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_200_OK)
-#     def delete(self, request, pk):
-#         pk_int = int(pk)
-#         project = get_object_or_404(Project, id=pk_int)
-#         project.delete()
-#         return Response(status=status.HTTP_204_NO_CONTENT)
-
 # all sections api
 class SectionViewSet(ModelViewSet):
     serializer_class = SectionSerializer
@@ -95,4 +49,4 @@ class SectionViewSet(ModelViewSet):
                 pass
         return context
 
-# 1:52:00         https://www.youtube.com/watch?v=_WSzE8xjxMY&t=49s&ab_channel=evlearn
+# 2:27:00         https://www.youtube.com/watch?v=_WSzE8xjxMY&t=49s&ab_channel=evlearn
