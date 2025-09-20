@@ -1,6 +1,6 @@
 from django.db import models
 
-# Create your models here.
+from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import RegexValidator
@@ -20,7 +20,7 @@ class Project(models.Model):
         message="Color must be a valid HEX code like #RRGGBB or #RGB."
     )
 
-    # user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="projects", null=True, blank=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="projects", null=True, blank=True)
     title = models.CharField(max_length=255)
     starred = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="on_track")
@@ -47,7 +47,7 @@ class Project(models.Model):
 class Section(models.Model):
     title = models.CharField(max_length=255)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="sections")
-    order = models.IntegerField(default=0)
+    order = models.IntegerField(default=10)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

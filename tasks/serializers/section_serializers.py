@@ -48,7 +48,7 @@ class SectionSerializer(serializers.ModelSerializer):
         
         # Calculate next order
         last_order = project.sections.aggregate(max_order=Max('order'))['max_order']
-        next_order = (last_order + 1) if last_order is not None else 0
+        next_order = (last_order + 10) if last_order is not None else 0
         
         # Set project_id and calculated order
         validated_data['project_id'] = project_id

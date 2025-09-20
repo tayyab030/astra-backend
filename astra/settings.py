@@ -28,6 +28,8 @@ DEBUG = True
 ALLOWED_HOSTS = []
 
 
+AUTH_USER_MODEL = "core.User"
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -40,6 +42,7 @@ INSTALLED_APPS = [
     'rest_framework',
     "debug_toolbar",
     "tasks",
+    "core",
 ]
 
 MIDDLEWARE = [
