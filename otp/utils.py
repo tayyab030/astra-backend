@@ -44,7 +44,7 @@ def send_otp_email(user_email, otp_code, otp_type='email'):
             <h2>Your OTP Code</h2>
             <p>Hello,</p>
             <p>Your OTP code is: <strong style="font-size: 24px; color: #007bff;">{otp_code}</strong></p>
-            <p>This code will expire in 30 minutes.</p>
+            <p>This code will expire in 5 minutes.</p>
             <p>If you didn't request this code, please ignore this email.</p>
             <br>
             <p>Best regards,<br>Astra Team</p>
