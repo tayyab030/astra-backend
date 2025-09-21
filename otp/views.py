@@ -4,8 +4,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 from .serializers import OTPCreateSerializer, OTPVerifySerializer, OTPSerializer
 from .models import OTP
+
+User = get_user_model()
 
 
 class OTPViewSet(ModelViewSet):
@@ -112,7 +115,7 @@ class OTPViewSet(ModelViewSet):
     @action(detail=False, methods=['post'], url_path='verify')
     def verify_otp(self, request):
         """
-        Verify an OTP code
+        Verify an OTP code and activate user if verification is successful
         
         POST /api/otp/verify/
         {
@@ -127,9 +130,15 @@ class OTPViewSet(ModelViewSet):
             try:
                 otp = serializer.save()
                 
+                # Get the user and activate them
+                user = User.objects.get(id=otp.user.id)
+                user.is_active = True
+                user.save()
+                
                 response_data = {
-                    'message': 'OTP verified successfully',
+                    'message': 'OTP verified successfully and user activated',
                     'verified': True,
+                    'user_activated': True,
                     'otp_token': str(otp.token),
                     'verified_at': timezone.now()
                 }
