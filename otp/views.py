@@ -29,7 +29,7 @@ class OTPViewSet(ModelViewSet):
     
     def get_queryset(self):
         """Filter queryset based on query parameters"""
-        queryset = super().get_queryset()
+        queryset = OTP.objects.all()
         
         # Filter by user_id if provided
         user_id = self.request.query_params.get('user_id')
@@ -84,7 +84,7 @@ class OTPViewSet(ModelViewSet):
             "expires_in": 300    # optional, defaults to 30 minutes
         }
         """
-        serializer = self.get_serializer(data=request.data)
+        serializer = OTPCreateSerializer(data=request.data)
         
         if serializer.is_valid():
             try:
@@ -121,7 +121,7 @@ class OTPViewSet(ModelViewSet):
             "otp_type": "email"  # optional, defaults to "email"
         }
         """
-        serializer = self.get_serializer(data=request.data)
+        serializer = OTPVerifySerializer(data=request.data)
         
         if serializer.is_valid():
             try:
@@ -152,7 +152,7 @@ class OTPViewSet(ModelViewSet):
         GET /api/otp/{token}/status/
         """
         try:
-            otp = self.get_object()
+            otp = OTP.objects.get(token=pk)
             
             status_data = {
                 'is_used': otp.is_used,
