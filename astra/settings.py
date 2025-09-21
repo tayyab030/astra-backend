@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'rest_framework',
     "djoser",
     "debug_toolbar",
+    "otp",
     "tasks",
     "core",
 ]

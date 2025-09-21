@@ -1,0 +1,223 @@
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.viewsets import ModelViewSet
+from django.utils import timezone
+from .serializers import OTPCreateSerializer, OTPVerifySerializer, OTPSerializer
+from .models import OTP
+
+
+class OTPViewSet(ModelViewSet):
+    """
+    ModelViewSet for OTP operations
+    
+    Provides CRUD operations and custom actions for OTP management
+    """
+    queryset = OTP.objects.all()
+    serializer_class = OTPSerializer
+    permission_classes = [AllowAny]
+    lookup_field = 'token'
+    
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action"""
+        if self.action == 'create_otp':
+            return OTPCreateSerializer
+        elif self.action == 'verify_otp':
+            return OTPVerifySerializer
+        return OTPSerializer
+    
+    def get_queryset(self):
+        """Filter queryset based on query parameters"""
+        queryset = super().get_queryset()
+        
+        # Filter by user_id if provided
+        user_id = self.request.query_params.get('user_id')
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        
+        # Filter by otp_type if provided
+        otp_type = self.request.query_params.get('otp_type')
+        if otp_type:
+            queryset = queryset.filter(otp_type=otp_type)
+        
+        # Filter by is_used if provided
+        is_used = self.request.query_params.get('is_used')
+        if is_used is not None:
+            queryset = queryset.filter(is_used=is_used.lower() == 'true')
+        
+        return queryset
+    
+    def list(self, request, *args, **kwargs):
+        """
+        List OTPs with optional filtering
+        
+        GET /api/otp/?user_id=1&otp_type=email&is_used=false
+        """
+        return super().list(request, *args, **kwargs)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Retrieve a specific OTP by token
+        
+        GET /api/otp/{token}/
+        """
+        return super().retrieve(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete an OTP
+        
+        DELETE /api/otp/{token}/
+        """
+        return super().destroy(request, *args, **kwargs)
+    
+    @action(detail=False, methods=['post'], url_path='create')
+    def create_otp(self, request):
+        """
+        Create a new OTP for user verification
+        
+        POST /api/otp/create/
+        {
+            "user_id": 1,
+            "otp_type": "email",  # optional, defaults to "email"
+            "expires_in": 300    # optional, defaults to 30 minutes
+        }
+        """
+        serializer = self.get_serializer(data=request.data)
+        
+        if serializer.is_valid():
+            try:
+                otp = serializer.save()
+                
+                # In a real application, you would send the OTP via email/SMS here
+                # For now, we'll just return it in the response for testing
+                response_data = {
+                    'message': 'OTP created successfully',
+                    'otp': OTPSerializer(otp).data,
+                    'expires_at': otp.get_expires_at(),
+                    'expired_previous_otps': getattr(otp, '_expired_previous_count', 0)
+                }
+                
+                return Response(response_data, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                return Response(
+                    {'error': f'Failed to create OTP: {str(e)}'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['post'], url_path='verify')
+    def verify_otp(self, request):
+        """
+        Verify an OTP code
+        
+        POST /api/otp/verify/
+        {
+            "user_id": 1,
+            "otp_code": "123456",
+            "otp_type": "email"  # optional, defaults to "email"
+        }
+        """
+        serializer = self.get_serializer(data=request.data)
+        
+        if serializer.is_valid():
+            try:
+                otp = serializer.save()
+                
+                response_data = {
+                    'message': 'OTP verified successfully',
+                    'verified': True,
+                    'otp_token': str(otp.token),
+                    'verified_at': timezone.now()
+                }
+                
+                return Response(response_data, status=status.HTTP_200_OK)
+                
+            except Exception as e:
+                return Response(
+                    {'error': f'Failed to verify OTP: {str(e)}'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['get'], url_path='status')
+    def otp_status(self, request, pk=None):
+        """
+        Check the status of an OTP by token
+        
+        GET /api/otp/{token}/status/
+        """
+        try:
+            otp = self.get_object()
+            
+            status_data = {
+                'is_used': otp.is_used,
+                'is_expired': otp.is_expired(),
+                'created_at': otp.created_at,
+                'expires_at': otp.get_expires_at(),
+                'remaining_time_seconds': otp.get_remaining_time(),
+                'otp_type': otp.otp_type
+            }
+            
+            return Response(status_data, status=status.HTTP_200_OK)
+            
+        except OTP.DoesNotExist:
+            return Response(
+                {'error': 'OTP not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=False, methods=['get'], url_path='stats')
+    def otp_stats(self, request):
+        """
+        Get OTP statistics for a user
+        
+        GET /api/otp/stats/?user_id=1
+        """
+        from .utils import get_otp_usage_stats
+        from django.contrib.auth import get_user_model
+        
+        User = get_user_model()
+        user_id = request.query_params.get('user_id')
+        
+        if not user_id:
+            return Response(
+                {'error': 'user_id parameter is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user = User.objects.get(id=user_id)
+            stats = get_otp_usage_stats(user)
+            return Response(stats, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=False, methods=['post'], url_path='cleanup')
+    def cleanup_otps(self, request):
+        """
+        Clean up expired OTPs
+        
+        POST /api/otp/cleanup/
+        """
+        from .utils import cleanup_expired_otps
+        
+        try:
+            count = cleanup_expired_otps()
+            return Response(
+                {'message': f'Successfully cleaned up {count} expired OTPs'}, 
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to cleanup OTPs: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

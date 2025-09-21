@@ -27,6 +27,7 @@ urlpatterns = [
     path("api/tasks/", include("tasks.urls")),
     path("api/auth/", include("djoser.urls")),
     path("api/auth/", include("djoser.urls.jwt")),
+    path("api/otp/", include("otp.urls")),
 ]
 
 if settings.DEBUG:
