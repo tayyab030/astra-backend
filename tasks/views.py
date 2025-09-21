@@ -48,5 +48,3 @@ class SectionViewSet(ModelViewSet):
                 # Let the serializer handle the validation error
                 pass
         return context
-
-# 2:27:00         https://www.youtube.com/watch?v=_WSzE8xjxMY&t=49s&ab_channel=evlearn

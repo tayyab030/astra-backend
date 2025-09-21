@@ -25,6 +25,8 @@ admin.site.index_title = "Welcome to Astra Admin Portal"
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/tasks/", include("tasks.urls")),
+    path("api/auth/", include("djoser.urls")),
+    path("api/auth/", include("djoser.urls.jwt")),
 ]
 
 if settings.DEBUG:

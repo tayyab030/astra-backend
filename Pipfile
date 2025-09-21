@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 django = "*"
 drf-nested-routers = "*"
+djoser = "*"
 
 [dev-packages]
 
