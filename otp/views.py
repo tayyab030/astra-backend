@@ -154,14 +154,15 @@ class OTPViewSet(ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=True, methods=['get'], url_path='status')
-    def otp_status(self, request, pk=None):
+    def otp_status(self, request, token=None):
         """
         Check the status of an OTP by token
         
         GET /api/otp/{token}/status/
         """
         try:
-            otp = OTP.objects.get(token=pk)
+            # token is the lookup field
+            otp = OTP.objects.get(token=token)
             
             status_data = {
                 'is_used': otp.is_used,
