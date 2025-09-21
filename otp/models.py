@@ -19,6 +19,8 @@ class OTP(models.Model):
     expires_in = models.IntegerField(default=300)  # seconds (5 min)
     is_used = models.BooleanField(default=False)
     token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=3)
 
     def is_expired(self):
         return timezone.now() > self.created_at + timedelta(seconds=self.expires_in)
@@ -33,6 +35,25 @@ class OTP(models.Model):
             return 0
         remaining = self.get_expires_at() - timezone.now()
         return int(remaining.total_seconds())
+    
+    def increment_attempt(self):
+        """Increment the attempt count and return the new count"""
+        self.attempt_count += 1
+        self.save()
+        return self.attempt_count
+    
+    def is_max_attempts_reached(self):
+        """Check if maximum attempts have been reached"""
+        return self.attempt_count >= self.max_attempts
+    
+    def get_remaining_attempts(self):
+        """Get the number of remaining attempts"""
+        return max(0, self.max_attempts - self.attempt_count)
+    
+    def expire_otp(self):
+        """Mark OTP as used (expired) due to max attempts reached"""
+        self.is_used = True
+        self.save()
     
     @classmethod
     def expire_previous_otps(cls, user, otp_type):

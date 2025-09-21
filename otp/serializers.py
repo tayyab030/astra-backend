@@ -119,16 +119,66 @@ class OTPVerifySerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'otp_code': "OTP has expired. Please request a new one.",
                     'expired_at': otp.get_expires_at(),
-                    'remaining_time': 0
+                    'remaining_time': 0,
+                    'error_type': 'expired'
+                })
+            
+            # Check if max attempts reached
+            if otp.is_max_attempts_reached():
+                # Expire the OTP due to max attempts
+                otp.expire_otp()
+                raise serializers.ValidationError({
+                    'otp_code': "Maximum verification attempts exceeded. OTP has been expired. Please request a new one.",
+                    'attempts_used': otp.attempt_count,
+                    'max_attempts': otp.max_attempts,
+                    'error_type': 'max_attempts_exceeded'
                 })
             
             attrs['otp_instance'] = otp
             return attrs
             
         except OTP.DoesNotExist:
-            raise serializers.ValidationError({
-                'otp_code': "Invalid OTP code or OTP type."
-            })
+            # Try to find OTP with wrong code to provide better error message
+            try:
+                user = User.objects.get(id=user_id)
+                otp = OTP.objects.get(
+                    user=user,
+                    otp_type=otp_type,
+                    is_used=False
+                )
+                
+                # Check if max attempts reached for wrong code
+                if otp.is_max_attempts_reached():
+                    otp.expire_otp()
+                    raise serializers.ValidationError({
+                        'otp_code': "Maximum verification attempts exceeded. OTP has been expired. Please request a new one.",
+                        'attempts_used': otp.attempt_count,
+                        'max_attempts': otp.max_attempts,
+                        'error_type': 'max_attempts_exceeded'
+                    })
+                
+                # Wrong OTP code - increment attempt count
+                current_attempts = otp.increment_attempt()
+                remaining_attempts = otp.get_remaining_attempts()
+                
+                error_message = f"Invalid OTP code. {remaining_attempts} attempt(s) remaining."
+                if remaining_attempts == 0:
+                    otp.expire_otp()
+                    error_message = "Maximum verification attempts exceeded. OTP has been expired. Please request a new one."
+                
+                raise serializers.ValidationError({
+                    'otp_code': error_message,
+                    'attempts_used': current_attempts,
+                    'max_attempts': otp.max_attempts,
+                    'remaining_attempts': remaining_attempts,
+                    'error_type': 'invalid_code'
+                })
+                
+            except OTP.DoesNotExist:
+                raise serializers.ValidationError({
+                    'otp_code': "Invalid OTP code or OTP type.",
+                    'error_type': 'not_found'
+                })
     
     def save(self):
         """Mark OTP as used after successful verification"""
@@ -137,6 +187,10 @@ class OTPVerifySerializer(serializers.Serializer):
         # Double-check expiration before marking as used
         if otp.is_expired():
             raise serializers.ValidationError("OTP has expired during verification process.")
+        
+        # Double-check max attempts before marking as used
+        if otp.is_max_attempts_reached():
+            raise serializers.ValidationError("Maximum verification attempts exceeded during verification process.")
         
         otp.is_used = True
         otp.save()

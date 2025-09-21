@@ -140,7 +140,9 @@ class OTPViewSet(ModelViewSet):
                     'verified': True,
                     'user_activated': True,
                     'otp_token': str(otp.token),
-                    'verified_at': timezone.now()
+                    'verified_at': timezone.now(),
+                    'attempts_used': otp.attempt_count + 1,  # +1 because this was the successful attempt
+                    'max_attempts': otp.max_attempts
                 }
                 
                 return Response(response_data, status=status.HTTP_200_OK)
@@ -151,7 +153,16 @@ class OTPViewSet(ModelViewSet):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Handle validation errors with proper status codes
+        error_data = serializer.errors
+        error_type = error_data.get('otp_code', {}).get('error_type', 'unknown') if isinstance(error_data.get('otp_code'), dict) else 'unknown'
+        
+        if error_type == 'max_attempts_exceeded':
+            return Response(error_data, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        elif error_type == 'expired':
+            return Response(error_data, status=status.HTTP_410_GONE)
+        else:
+            return Response(error_data, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=True, methods=['get'], url_path='status')
     def otp_status(self, request, token=None):
@@ -170,7 +181,11 @@ class OTPViewSet(ModelViewSet):
                 'created_at': otp.created_at,
                 'expires_at': otp.get_expires_at(),
                 'remaining_time_seconds': otp.get_remaining_time(),
-                'otp_type': otp.otp_type
+                'otp_type': otp.otp_type,
+                'attempt_count': otp.attempt_count,
+                'max_attempts': otp.max_attempts,
+                'remaining_attempts': otp.get_remaining_attempts(),
+                'is_max_attempts_reached': otp.is_max_attempts_reached()
             }
             
             return Response(status_data, status=status.HTTP_200_OK)
