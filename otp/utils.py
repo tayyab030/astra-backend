@@ -104,20 +104,46 @@ def send_otp_sms(phone_number, otp_code):
 
 def cleanup_expired_otps():
     """
-    Clean up expired OTPs from the database
+    Clean up expired OTPs from the database and delete inactive users with no valid OTPs
     This can be run as a periodic task using Celery or Django management command
     """
     from .models import OTP
+    from django.contrib.auth import get_user_model
     from django.utils import timezone
     from datetime import timedelta
+    
+    User = get_user_model()
     
     # Delete OTPs that are older than 24 hours
     cutoff_time = timezone.now() - timedelta(hours=24)
     expired_otps = OTP.objects.filter(created_at__lt=cutoff_time)
-    count = expired_otps.count()
+    otp_count = expired_otps.count()
     expired_otps.delete()
     
-    return count
+    # Find users with is_active=False and no valid OTP rows
+    # A valid OTP is one that is not used and not expired
+    inactive_users = User.objects.filter(is_active=False)
+    deleted_users_count = 0
+    
+    for user in inactive_users:
+        # Check if user has any valid (non-expired, non-used) OTPs
+        valid_otps = OTP.objects.filter(
+            user=user,
+            is_used=False
+        ).exclude(
+            created_at__lt=timezone.now() - timedelta(seconds=OTP.DEFAULT_EXPIRY_SECONDS)  # 5 minutes default expiry
+        )
+        
+        # If no valid OTPs exist, delete the user
+        if not valid_otps.exists():
+            user.delete()
+            deleted_users_count += 1
+    
+    return {
+        'expired_otps_deleted': otp_count,
+        'inactive_users_deleted': deleted_users_count,
+        'total_cleanup_count': otp_count + deleted_users_count
+    }
 
 
 def get_otp_usage_stats(user):

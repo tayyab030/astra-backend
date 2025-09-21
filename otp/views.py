@@ -83,8 +83,7 @@ class OTPViewSet(ModelViewSet):
         POST /api/otp/create/
         {
             "user_id": 1,
-            "otp_type": "email",  # optional, defaults to "email"
-            "expires_in": 300    # optional, defaults to 30 minutes
+            "otp_type": "email"  # optional, defaults to "email"
         }
         """
         serializer = OTPCreateSerializer(data=request.data)
@@ -229,16 +228,21 @@ class OTPViewSet(ModelViewSet):
     @action(detail=False, methods=['post'], url_path='cleanup')
     def cleanup_otps(self, request):
         """
-        Clean up expired OTPs
+        Clean up expired OTPs and delete inactive users with no valid OTPs
         
         POST /api/otp/cleanup/
         """
         from .utils import cleanup_expired_otps
         
         try:
-            count = cleanup_expired_otps()
+            result = cleanup_expired_otps()
             return Response(
-                {'message': f'Successfully cleaned up {count} expired OTPs'}, 
+                {
+                    'message': 'Cleanup completed successfully',
+                    'expired_otps_deleted': result['expired_otps_deleted'],
+                    'inactive_users_deleted': result['inactive_users_deleted'],
+                    'total_cleanup_count': result['total_cleanup_count']
+                }, 
                 status=status.HTTP_200_OK
             )
         except Exception as e:

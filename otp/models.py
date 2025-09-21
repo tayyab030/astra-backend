@@ -5,6 +5,8 @@ from core.models import User
 import uuid
 
 class OTP(models.Model):
+    # Constants
+    DEFAULT_EXPIRY_SECONDS = 300  # 5 minutes default expiry
     TYPES_CHOICES = [
         ("email", "Email"),
         ("sms", "SMS"),
@@ -16,7 +18,7 @@ class OTP(models.Model):
     otp_code = models.CharField(max_length=6, editable=False,)
     otp_type = models.CharField(max_length=20, choices=TYPES_CHOICES, default="email")
     created_at = models.DateTimeField(auto_now_add=True)
-    expires_in = models.IntegerField(default=300)  # seconds (5 min)
+    expires_in = models.IntegerField(default=DEFAULT_EXPIRY_SECONDS)  # seconds (5 min)
     is_used = models.BooleanField(default=False)
     token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     attempt_count = models.PositiveIntegerField(default=0)

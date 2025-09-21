@@ -26,12 +26,6 @@ class OTPCreateSerializer(serializers.Serializer):
         default='email',
         required=False
     )
-    expires_in = serializers.IntegerField(
-        min_value=60,  # Minimum 1 minute
-        max_value=3600,  # Maximum 1 hour
-        default=300,  # Default 30 minutes
-        required=False
-    )
     
     def validate_user_id(self, value):
         """Validate that the user exists in the system"""
@@ -58,7 +52,6 @@ class OTPCreateSerializer(serializers.Serializer):
         """Create a new OTP instance and expire previous active OTPs"""
         user = validated_data['user']
         otp_type = validated_data.get('otp_type', 'email')
-        expires_in = validated_data.get('expires_in', 300)
         
         # Expire all previous active OTPs of the same type for this user
         expired_count = OTP.expire_previous_otps(user, otp_type)
@@ -66,12 +59,11 @@ class OTPCreateSerializer(serializers.Serializer):
         # Generate 6-digit OTP code
         otp_code = ''.join(random.choices(string.digits, k=6))
         
-        # Create new OTP instance
+        # Create new OTP instance with default expiry time
         otp = OTP.objects.create(
             user=user,
             otp_code=otp_code,
-            otp_type=otp_type,
-            expires_in=expires_in
+            otp_type=otp_type
         )
         
         # Store the count of expired OTPs for potential use in views
