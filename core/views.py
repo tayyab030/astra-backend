@@ -40,7 +40,6 @@ class CustomUserViewSet(UserViewSet):
                         {
                             'error': 'User already exists',
                             'message': 'A user with this email already exists and is active',
-                            'email': email
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
