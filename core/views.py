@@ -57,7 +57,7 @@ class CustomUserViewSet(UserViewSet):
                     user=user,
                     otp_code=otp_code,
                     otp_type='email',
-                    expires_in=1800  # 30 minutes
+                    expires_in=OTP.DEFAULT_EXPIRY_SECONDS
                 )
                 
                 # Send OTP via email

@@ -65,6 +65,25 @@ class OTPViewSet(ModelViewSet):
         
         GET /api/otp/{token}/
         """
+        try:
+            # Validate UUID format first
+            token = kwargs.get('token')
+            if token:
+                import uuid
+                try:
+                    uuid.UUID(token)
+                except ValueError:
+                    return Response(
+                        {
+                            'error': 'Invalid token format',
+                            'message': 'Token must be a valid UUID format',
+                            'provided_token': token
+                        }, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        except Exception:
+            pass  # Let the parent method handle other cases
+            
         return super().retrieve(request, *args, **kwargs)
     
     def destroy(self, request, *args, **kwargs):
@@ -73,6 +92,25 @@ class OTPViewSet(ModelViewSet):
         
         DELETE /api/otp/{token}/
         """
+        try:
+            # Validate UUID format first
+            token = kwargs.get('token')
+            if token:
+                import uuid
+                try:
+                    uuid.UUID(token)
+                except ValueError:
+                    return Response(
+                        {
+                            'error': 'Invalid token format',
+                            'message': 'Token must be a valid UUID format',
+                            'provided_token': token
+                        }, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        except Exception:
+            pass  # Let the parent method handle other cases
+            
         return super().destroy(request, *args, **kwargs)
     
     @action(detail=False, methods=['post'], url_path='create')
@@ -171,6 +209,20 @@ class OTPViewSet(ModelViewSet):
         GET /api/otp/{token}/status/
         """
         try:
+            # Validate UUID format first
+            import uuid
+            try:
+                uuid.UUID(token)
+            except ValueError:
+                return Response(
+                    {
+                        'error': 'Invalid token format',
+                        'message': 'Token must be a valid UUID format',
+                        'provided_token': token
+                    }, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
             # token is the lookup field
             otp = OTP.objects.get(token=token)
             
@@ -184,7 +236,8 @@ class OTPViewSet(ModelViewSet):
                 'attempt_count': otp.attempt_count,
                 'max_attempts': otp.max_attempts,
                 'remaining_attempts': otp.get_remaining_attempts(),
-                'is_max_attempts_reached': otp.is_max_attempts_reached()
+                'is_max_attempts_reached': otp.is_max_attempts_reached(),
+                'user_id': otp.user.id
             }
             
             return Response(status_data, status=status.HTTP_200_OK)
