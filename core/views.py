@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from djoser.views import UserViewSet
 from djoser.serializers import UserCreateSerializer
+from .serializers import UserCreateSerializer as CustomUserCreateSerializer
 from django.contrib.auth import get_user_model
 from otp.models import OTP
 from otp.utils import generate_otp_code, send_otp_email
@@ -27,8 +28,8 @@ class CustomUserViewSet(UserViewSet):
         """
         Override the create method to customize user registration
         """
-        # Use the default Djoser serializer for user creation
-        serializer = UserCreateSerializer(data=request.data)
+        # Use the custom serializer for user creation that includes first_name and last_name
+        serializer = CustomUserCreateSerializer(data=request.data)
         
         if serializer.is_valid():
             try:
@@ -36,8 +37,17 @@ class CustomUserViewSet(UserViewSet):
                 user_data = serializer.validated_data.copy()
                 user_data['is_active'] = False
                 
+                # Ensure first_name and last_name are included
+                first_name = user_data.pop('first_name', '')
+                last_name = user_data.pop('last_name', '')
+                
                 # Create the user
                 user = User.objects.create_user(**user_data)
+                
+                # Set first_name and last_name after creation
+                user.first_name = first_name
+                user.last_name = last_name
+                user.save()
                 
                 # Generate OTP code
                 otp_code = generate_otp_code()

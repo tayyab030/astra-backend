@@ -34,7 +34,7 @@ SECRET_KEY = 'django-insecure-lf9yum08!3n42+@&6%e6gi@8vy(pd!i238zx6fx-4t!v@v^a#7
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 
 AUTH_USER_MODEL = "core.User"
@@ -51,12 +51,14 @@ INSTALLED_APPS = [
     'rest_framework',
     "djoser",
     "debug_toolbar",
+    "corsheaders",
     "otp",
     "tasks",
     "core",
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -179,3 +181,34 @@ DJOSER = {
         'user_create': 'core.serializers.UserCreateSerializer',
     },
 }
+
+# CORS settings
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React default port
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",  # Alternative React port
+    "http://127.0.0.1:3001",
+    "http://localhost:5173",  # Vite default port
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",  # Vue default port
+    "http://127.0.0.1:8080",
+]
+
+# Allow all origins in development (remove in production)
+CORS_ALLOW_ALL_ORIGINS = True
+
+# Allow credentials (cookies, authorization headers)
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow common headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]

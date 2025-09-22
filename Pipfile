@@ -7,6 +7,7 @@ name = "pypi"
 django = "*"
 drf-nested-routers = "*"
 djoser = "*"
+django-cors-headers = "*"
 
 [dev-packages]
 
