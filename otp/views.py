@@ -226,17 +226,26 @@ class OTPViewSet(ModelViewSet):
             # token is the lookup field
             otp = OTP.objects.get(token=token)
             
+            # Check if max attempts reached
+            is_max_attempts_reached = otp.is_max_attempts_reached()
+            
+            # If max attempts reached, OTP should be considered expired
+            is_expired = otp.is_expired() or is_max_attempts_reached
+            
+            # If expired (by time or max attempts), remaining time should be 0
+            remaining_time = 0 if is_expired else otp.get_remaining_time()
+            
             status_data = {
                 'is_used': otp.is_used,
-                'is_expired': otp.is_expired(),
+                'is_expired': is_expired,
                 'created_at': otp.created_at,
                 'expires_at': otp.get_expires_at(),
-                'remaining_time_seconds': otp.get_remaining_time(),
+                'remaining_time_seconds': remaining_time,
                 'otp_type': otp.otp_type,
                 'attempt_count': otp.attempt_count,
                 'max_attempts': otp.max_attempts,
                 'remaining_attempts': otp.get_remaining_attempts(),
-                'is_max_attempts_reached': otp.is_max_attempts_reached(),
+                'is_max_attempts_reached': is_max_attempts_reached,
                 'user_id': otp.user.id
             }
             
