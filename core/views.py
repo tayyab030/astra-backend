@@ -28,6 +28,29 @@ class CustomUserViewSet(UserViewSet):
         """
         Override the create method to customize user registration
         """
+        # Check if user already exists with the same email (before validation)
+        email = request.data.get('email')
+        if email:
+            existing_user = User.objects.filter(email=email).first()
+            
+            if existing_user:
+                if existing_user.is_active:
+                    # User exists and is active, return error
+                    return Response(
+                        {
+                            'error': 'User already exists',
+                            'message': 'A user with this email already exists and is active',
+                            'email': email
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                else:
+                    # User exists but is inactive, delete the existing user and their OTPs
+                    # Delete associated OTPs first
+                    OTP.objects.filter(user=existing_user).delete()
+                    # Delete the inactive user
+                    existing_user.delete()
+        
         # Use the custom serializer for user creation that includes first_name and last_name
         serializer = CustomUserCreateSerializer(data=request.data)
         
