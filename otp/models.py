@@ -13,7 +13,7 @@ class OTP(models.Model):
         ("authenticator", "Authenticator App"),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='otp_user')
 
     otp_code = models.CharField(max_length=6, editable=False,)
     otp_type = models.CharField(max_length=20, choices=TYPES_CHOICES, default="email")
