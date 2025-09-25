@@ -179,6 +179,7 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default='noreply@astra.com')
 DJOSER = {
     'SERIALIZERS': {
         'user_create': 'core.serializers.UserCreateSerializer',
+        "token_create": "core.serializers.CustomTokenCreateSerializer",
     },
 }
 

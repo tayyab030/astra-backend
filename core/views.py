@@ -10,7 +10,9 @@ from django.contrib.auth import get_user_model
 from otp.models import OTP
 from otp.utils import generate_otp_code, send_otp_email
 from otp.serializers import OTPSerializer
-import uuid
+from rest_framework import generics
+from .serializers import CustomTokenCreateSerializer
+
 
 User = get_user_model()
 
@@ -92,3 +94,10 @@ class CustomUserViewSet(UserViewSet):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
   
+class CustomTokenCreateView(generics.GenericAPIView):
+    serializer_class = CustomTokenCreateSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data)
