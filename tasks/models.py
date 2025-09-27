@@ -15,24 +15,52 @@ class Project(models.Model):
         ("complete", "Complete"),
     ]
 
+    ICON_CHOICES = [
+        ("List", "List"),
+        ("BarChart", "BarChart"),
+        ("Layers", "Layers"),
+        ("Calendar", "Calendar"),
+        ("Rocket", "Rocket"),
+        ("Users", "Users"),
+        ("TrendingUp", "TrendingUp"),
+        ("Star", "Star"),
+        ("Bug", "Bug"),
+        ("Lightbulb", "Lightbulb"),
+        ("Globe", "Globe"),
+        ("Settings", "Settings"),
+        ("FileText", "FileText"),
+        ("Monitor", "Monitor"),
+        ("CheckCircle", "CheckCircle"),
+        ("Target", "Target"),
+        ("Code", "Code"),
+        ("Megaphone", "Megaphone"),
+        ("MessageCircle", "MessageCircle"),
+        ("Briefcase", "Briefcase"),
+    ]
+
     hex_color_validator = RegexValidator(
-        regex=r'^#(?:[0-9a-fA-F]{3}){1,2}$',
-        message="Color must be a valid HEX code like #RRGGBB or #RGB."
+        regex=r"^#(?:[0-9a-fA-F]{3}){1,2}$",
+        message="Color must be a valid HEX code like #RRGGBB or #RGB.",
     )
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="projects", null=True, blank=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="projects",
+        null=True,
+        blank=True,
+    )
     title = models.CharField(max_length=255)
     starred = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="on_track")
     color = models.CharField(
         max_length=7,  # "#RRGGBB" has 7 chars
-        blank=True,
-        null=True,
-        default="#1E1E1E",  # dark gray, good for dark mode
-        validators=[hex_color_validator]
-    )  
+        default="#5EC5DC",  
+        validators=[hex_color_validator],
+    )
     description = models.TextField(blank=True, null=True)
     due_date = models.DateField(blank=True, null=True)
+    icon = models.CharField(max_length=30, choices=ICON_CHOICES, default="Globe")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -46,7 +74,9 @@ class Project(models.Model):
 
 class Section(models.Model):
     title = models.CharField(max_length=255)
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="sections")
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="sections"
+    )
     order = models.IntegerField(default=10)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -55,8 +85,8 @@ class Section(models.Model):
         return f"{self.title} ({self.project.title})"
 
     class Meta:
-        unique_together = ('project', 'order')  # enforce per-project uniqueness
-        ordering = ['order']
+        unique_together = ("project", "order")  # enforce per-project uniqueness
+        ordering = ["order"]
 
 
 class Task(models.Model):
@@ -74,14 +104,24 @@ class Task(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)  # store HTML
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="incomplete")
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="incomplete"
+    )
     due_date = models.DateField(blank=True, null=True)
-    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="medium")
+    priority = models.CharField(
+        max_length=20, choices=PRIORITY_CHOICES, default="medium"
+    )
 
-    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name="tasks", blank=True, null=True)
-    parent_task = models.ForeignKey("self", on_delete=models.CASCADE, related_name="subtasks", blank=True, null=True)
+    section = models.ForeignKey(
+        Section, on_delete=models.CASCADE, related_name="tasks", blank=True, null=True
+    )
+    parent_task = models.ForeignKey(
+        "self", on_delete=models.CASCADE, related_name="subtasks", blank=True, null=True
+    )
 
-    attachments = models.JSONField(blank=True, null=True)  # store file paths or metadata as JSON
+    attachments = models.JSONField(
+        blank=True, null=True
+    )  # store file paths or metadata as JSON
 
     tags = models.ManyToManyField("Tag", related_name="tasks", blank=True)
 
@@ -97,7 +137,9 @@ class Task(models.Model):
 
 class Tag(models.Model):
     name = models.CharField(max_length=50)
-    color = models.CharField(max_length=20, blank=True, null=True)  # hex code or color name
+    color = models.CharField(
+        max_length=20, blank=True, null=True
+    )  # hex code or color name
 
     created_at = models.DateTimeField(auto_now_add=True)
 
