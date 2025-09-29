@@ -112,12 +112,16 @@ class Task(models.Model):
         max_length=20, choices=PRIORITY_CHOICES, default="medium"
     )
 
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="tasks"
+    )
     section = models.ForeignKey(
         Section, on_delete=models.CASCADE, related_name="tasks", blank=True, null=True
     )
     parent_task = models.ForeignKey(
         "self", on_delete=models.CASCADE, related_name="subtasks", blank=True, null=True
     )
+    order = models.IntegerField(default=10)
 
     attachments = models.JSONField(
         blank=True, null=True
@@ -132,7 +136,19 @@ class Task(models.Model):
         return self.title
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["order", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['section', 'order'],
+                name='unique_task_order_per_section',
+                condition=models.Q(section__isnull=False)
+            ),
+            models.UniqueConstraint(
+                fields=['project', 'order'],
+                name='unique_task_order_per_project',
+                condition=models.Q(section__isnull=True)
+            )
+        ]
 
 
 class Tag(models.Model):
