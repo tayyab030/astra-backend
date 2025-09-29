@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from .serializers import OTPCreateSerializer, OTPVerifySerializer, OTPSerializer
 from .models import OTP
+from core.utils import APIResponse, format_serializer_errors
 
 User = get_user_model()
 
@@ -73,13 +74,10 @@ class OTPViewSet(ModelViewSet):
                 try:
                     uuid.UUID(token)
                 except ValueError:
-                    return Response(
-                        {
-                            'error': 'Invalid token format',
-                            'message': 'Token must be a valid UUID format',
-                            'provided_token': token
-                        }, 
-                        status=status.HTTP_400_BAD_REQUEST
+                    return APIResponse.error(
+                        message="Invalid token format",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        data={"provided_token": token}
                     )
         except Exception:
             pass  # Let the parent method handle other cases
@@ -100,13 +98,10 @@ class OTPViewSet(ModelViewSet):
                 try:
                     uuid.UUID(token)
                 except ValueError:
-                    return Response(
-                        {
-                            'error': 'Invalid token format',
-                            'message': 'Token must be a valid UUID format',
-                            'provided_token': token
-                        }, 
-                        status=status.HTTP_400_BAD_REQUEST
+                    return APIResponse.error(
+                        message="Invalid token format",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        data={"provided_token": token}
                     )
         except Exception:
             pass  # Let the parent method handle other cases
@@ -133,21 +128,26 @@ class OTPViewSet(ModelViewSet):
                 # In a real application, you would send the OTP via email/SMS here
                 # For now, we'll just return it in the response for testing
                 response_data = {
-                    'message': 'OTP created successfully',
                     'otp': OTPSerializer(otp).data,
                     'expires_at': otp.get_expires_at(),
                     'expired_previous_otps': getattr(otp, '_expired_previous_count', 0)
                 }
                 
-                return Response(response_data, status=status.HTTP_201_CREATED)
+                return APIResponse.created(
+                    data=response_data,
+                    message="OTP created successfully"
+                )
                 
             except Exception as e:
-                return Response(
-                    {'error': f'Failed to create OTP: {str(e)}'}, 
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                return APIResponse.server_error(
+                    message="Failed to create OTP",
+                    error_details=str(e)
                 )
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return APIResponse.validation_error(
+            errors=format_serializer_errors(serializer.errors),
+            message="OTP creation failed"
+        )
     
     @action(detail=False, methods=['post'], url_path='verify')
     def verify_otp(self, request):
@@ -173,7 +173,6 @@ class OTPViewSet(ModelViewSet):
                 user.save()
                 
                 response_data = {
-                    'message': 'OTP verified successfully and user activated',
                     'verified': True,
                     'user_activated': True,
                     'otp_token': str(otp.token),
@@ -182,12 +181,15 @@ class OTPViewSet(ModelViewSet):
                     'max_attempts': otp.max_attempts
                 }
                 
-                return Response(response_data, status=status.HTTP_200_OK)
+                return APIResponse.success(
+                    data=response_data,
+                    message="OTP verified successfully and user activated"
+                )
                 
             except Exception as e:
-                return Response(
-                    {'error': f'Failed to verify OTP: {str(e)}'}, 
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                return APIResponse.server_error(
+                    message="Failed to verify OTP",
+                    error_details=str(e)
                 )
         
         # Handle validation errors with proper status codes
@@ -195,11 +197,22 @@ class OTPViewSet(ModelViewSet):
         error_type = error_data.get('otp_code', {}).get('error_type', 'unknown') if isinstance(error_data.get('otp_code'), dict) else 'unknown'
         
         if error_type == 'max_attempts_exceeded':
-            return Response(error_data, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            return APIResponse.error(
+                message="Maximum attempts exceeded",
+                errors=format_serializer_errors(error_data),
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS
+            )
         elif error_type == 'expired':
-            return Response(error_data, status=status.HTTP_410_GONE)
+            return APIResponse.error(
+                message="OTP has expired",
+                errors=format_serializer_errors(error_data),
+                status_code=status.HTTP_410_GONE
+            )
         else:
-            return Response(error_data, status=status.HTTP_400_BAD_REQUEST)
+            return APIResponse.validation_error(
+                errors=format_serializer_errors(error_data),
+                message="OTP verification failed"
+            )
     
     @action(detail=True, methods=['get'], url_path='status')
     def otp_status(self, request, token=None):
@@ -214,13 +227,10 @@ class OTPViewSet(ModelViewSet):
             try:
                 uuid.UUID(token)
             except ValueError:
-                return Response(
-                    {
-                        'error': 'Invalid token format',
-                        'message': 'Token must be a valid UUID format',
-                        'provided_token': token
-                    }, 
-                    status=status.HTTP_400_BAD_REQUEST
+                return APIResponse.error(
+                    message="Invalid token format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    data={"provided_token": token}
                 )
             
             # token is the lookup field
@@ -249,12 +259,15 @@ class OTPViewSet(ModelViewSet):
                 'user_id': otp.user.id
             }
             
-            return Response(status_data, status=status.HTTP_200_OK)
+            return APIResponse.success(
+                data=status_data,
+                message="OTP status retrieved successfully"
+            )
             
         except OTP.DoesNotExist:
-            return Response(
-                {'error': 'OTP not found'}, 
-                status=status.HTTP_404_NOT_FOUND
+            return APIResponse.not_found(
+                message="OTP not found",
+                resource="OTP"
             )
     
     @action(detail=False, methods=['get'], url_path='stats')
@@ -271,20 +284,23 @@ class OTPViewSet(ModelViewSet):
         user_id = request.query_params.get('user_id')
         
         if not user_id:
-            return Response(
-                {'error': 'user_id parameter is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
+            return APIResponse.error(
+                message="user_id parameter is required",
+                status_code=status.HTTP_400_BAD_REQUEST
             )
         
         try:
             user = User.objects.get(id=user_id)
             stats = get_otp_usage_stats(user)
-            return Response(stats, status=status.HTTP_200_OK)
+            return APIResponse.success(
+                data=stats,
+                message="OTP statistics retrieved successfully"
+            )
             
         except User.DoesNotExist:
-            return Response(
-                {'error': 'User not found'}, 
-                status=status.HTTP_404_NOT_FOUND
+            return APIResponse.not_found(
+                message="User not found",
+                resource="User"
             )
     
     @action(detail=False, methods=['post'], url_path='cleanup')
@@ -298,17 +314,17 @@ class OTPViewSet(ModelViewSet):
         
         try:
             result = cleanup_expired_otps()
-            return Response(
-                {
-                    'message': 'Cleanup completed successfully',
-                    'expired_otps_deleted': result['expired_otps_deleted'],
-                    'inactive_users_deleted': result['inactive_users_deleted'],
-                    'total_cleanup_count': result['total_cleanup_count']
-                }, 
-                status=status.HTTP_200_OK
+            cleanup_data = {
+                'expired_otps_deleted': result['expired_otps_deleted'],
+                'inactive_users_deleted': result['inactive_users_deleted'],
+                'total_cleanup_count': result['total_cleanup_count']
+            }
+            return APIResponse.success(
+                data=cleanup_data,
+                message="Cleanup completed successfully"
             )
         except Exception as e:
-            return Response(
-                {'error': f'Failed to cleanup OTPs: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            return APIResponse.server_error(
+                message="Failed to cleanup OTPs",
+                error_details=str(e)
             )

@@ -9,6 +9,7 @@ from tasks.serializers.project_serializers import ProjectSerializer
 from tasks.models import Project, Task, Section
 from tasks.serializers.section_serializers import SectionSerializer
 from tasks.serializers.task_serializers import TaskSerializer, TaskListSerializer, TaskDetailSerializer
+from core.utils import APIResponse, format_serializer_errors
 
 # all projects api
 # this viewset is used to create, retrieve, update and delete projects
@@ -26,6 +27,79 @@ class ProjectViewSet(ModelViewSet):
 
     def get_serializer_context(self):
         return {'request': self.request}
+    
+    def list(self, request, *args, **kwargs):
+        """Override list to use standardized response"""
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return APIResponse.success(
+            data=serializer.data,
+            message="Projects retrieved successfully"
+        )
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Override retrieve to use standardized response"""
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return APIResponse.success(
+                data=serializer.data,
+                message="Project retrieved successfully"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Project not found",
+                resource="Project"
+            )
+    
+    def create(self, request, *args, **kwargs):
+        """Override create to use standardized response"""
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            self.perform_create(serializer)
+            return APIResponse.created(
+                data=serializer.data,
+                message="Project created successfully"
+            )
+        return APIResponse.validation_error(
+            errors=format_serializer_errors(serializer.errors),
+            message="Project creation failed"
+        )
+    
+    def update(self, request, *args, **kwargs):
+        """Override update to use standardized response"""
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get('partial', False))
+            if serializer.is_valid():
+                serializer.save()
+                return APIResponse.updated(
+                    data=serializer.data,
+                    message="Project updated successfully"
+                )
+            return APIResponse.validation_error(
+                errors=format_serializer_errors(serializer.errors),
+                message="Project update failed"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Project not found",
+                resource="Project"
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to use standardized response"""
+        try:
+            instance = self.get_object()
+            self.perform_destroy(instance)
+            return APIResponse.deleted(
+                message="Project deleted successfully"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Project not found",
+                resource="Project"
+            )
     
 # all sections api
 class SectionViewSet(ModelViewSet):
@@ -60,6 +134,85 @@ class SectionViewSet(ModelViewSet):
                 # Let the serializer handle the validation error
                 pass
         return context
+    
+    def list(self, request, *args, **kwargs):
+        """Override list to use standardized response"""
+        try:
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            return APIResponse.success(
+                data=serializer.data,
+                message="Sections retrieved successfully"
+            )
+        except NotFound as e:
+            return APIResponse.error(
+                message=str(e),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Override retrieve to use standardized response"""
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return APIResponse.success(
+                data=serializer.data,
+                message="Section retrieved successfully"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Section not found",
+                resource="Section"
+            )
+    
+    def create(self, request, *args, **kwargs):
+        """Override create to use standardized response"""
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return APIResponse.created(
+                data=serializer.data,
+                message="Section created successfully"
+            )
+        return APIResponse.validation_error(
+            errors=format_serializer_errors(serializer.errors),
+            message="Section creation failed"
+        )
+    
+    def update(self, request, *args, **kwargs):
+        """Override update to use standardized response"""
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get('partial', False))
+            if serializer.is_valid():
+                serializer.save()
+                return APIResponse.updated(
+                    data=serializer.data,
+                    message="Section updated successfully"
+                )
+            return APIResponse.validation_error(
+                errors=format_serializer_errors(serializer.errors),
+                message="Section update failed"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Section not found",
+                resource="Section"
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to use standardized response"""
+        try:
+            instance = self.get_object()
+            self.perform_destroy(instance)
+            return APIResponse.deleted(
+                message="Section deleted successfully"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Section not found",
+                resource="Section"
+            )
 
 
 class TaskViewSet(ModelViewSet):
@@ -130,23 +283,94 @@ class TaskViewSet(ModelViewSet):
                 raise NotFound("Invalid project ID.")
     
     def list(self, request, *args, **kwargs):
-        """Override list to ensure proper project filtering"""
+        """Override list to use standardized response"""
         project_id = self.kwargs.get('project_pk')
         if not project_id:
-            return Response(
-                {"detail": "Project ID is required."}, 
-                status=status.HTTP_400_BAD_REQUEST
+            return APIResponse.error(
+                message="Project ID is required",
+                status_code=status.HTTP_400_BAD_REQUEST
             )
         
-        return super().list(request, *args, **kwargs)
+        try:
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            return APIResponse.success(
+                data=serializer.data,
+                message="Tasks retrieved successfully"
+            )
+        except NotFound as e:
+            return APIResponse.error(
+                message=str(e),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
     
     def create(self, request, *args, **kwargs):
-        """Override create to ensure project is set correctly"""
+        """Override create to use standardized response"""
         project_id = self.kwargs.get('project_pk')
         if not project_id:
-            return Response(
-                {"detail": "Project ID is required."}, 
-                status=status.HTTP_400_BAD_REQUEST
+            return APIResponse.error(
+                message="Project ID is required",
+                status_code=status.HTTP_400_BAD_REQUEST
             )
         
-        return super().create(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            self.perform_create(serializer)
+            return APIResponse.created(
+                data=serializer.data,
+                message="Task created successfully"
+            )
+        return APIResponse.validation_error(
+            errors=format_serializer_errors(serializer.errors),
+            message="Task creation failed"
+        )
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Override retrieve to use standardized response"""
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return APIResponse.success(
+                data=serializer.data,
+                message="Task retrieved successfully"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Task not found",
+                resource="Task"
+            )
+    
+    def update(self, request, *args, **kwargs):
+        """Override update to use standardized response"""
+        try:
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get('partial', False))
+            if serializer.is_valid():
+                serializer.save()
+                return APIResponse.updated(
+                    data=serializer.data,
+                    message="Task updated successfully"
+                )
+            return APIResponse.validation_error(
+                errors=format_serializer_errors(serializer.errors),
+                message="Task update failed"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Task not found",
+                resource="Task"
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to use standardized response"""
+        try:
+            instance = self.get_object()
+            self.perform_destroy(instance)
+            return APIResponse.deleted(
+                message="Task deleted successfully"
+            )
+        except NotFound:
+            return APIResponse.not_found(
+                message="Task not found",
+                resource="Task"
+            )

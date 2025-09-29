@@ -12,6 +12,7 @@ from otp.utils import generate_otp_code, send_otp_email
 from otp.serializers import OTPSerializer
 from rest_framework import generics
 from .serializers import CustomTokenCreateSerializer
+from .utils import APIResponse, format_serializer_errors
 
 
 User = get_user_model()
@@ -80,24 +81,37 @@ class CustomUserViewSet(UserViewSet):
                     'date_joined': user.date_joined,
                     'otp_token': str(otp.token),
                     'otp_expires_at': otp.get_expires_at(),
-                    'email_sent': email_sent,
-                    'message': 'User created successfully. Please check your email for OTP verification.'
+                    'email_sent': email_sent
                 }
                 
-                return Response(response_data, status=status.HTTP_201_CREATED)
+                return APIResponse.created(
+                    data=response_data,
+                    message="User created successfully. Please check your email for OTP verification."
+                )
                 
             except Exception as e:
-                return Response(
-                    {'error': f'Failed to create user: {str(e)}'}, 
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                return APIResponse.server_error(
+                    message="Failed to create user",
+                    error_details=str(e)
                 )
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return APIResponse.validation_error(
+            errors=format_serializer_errors(serializer.errors),
+            message="User registration failed"
+        )
   
 class CustomTokenCreateView(generics.GenericAPIView):
     serializer_class = CustomTokenCreateSerializer
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(serializer.validated_data)
+        if serializer.is_valid(raise_exception=False):
+            return APIResponse.success(
+                data=serializer.validated_data,
+                message="Authentication successful"
+            )
+        else:
+            return APIResponse.validation_error(
+                errors=format_serializer_errors(serializer.errors),
+                message="Authentication failed"
+            )
