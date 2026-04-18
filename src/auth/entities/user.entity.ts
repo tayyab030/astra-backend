@@ -25,6 +25,15 @@ export class User {
   @Column()
   password: string;
 
+  @Column({ type: 'boolean', default: false })
+  is_verified: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  verified_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  token: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 }
