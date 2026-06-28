@@ -1,34 +1,37 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import {
   getCategoryLabel,
-  WEALTH_CATEGORIES,
+  isIncomeCategory,
+  WEALTH_EXPENSE_CATEGORIES,
 } from './constants/wealth-categories';
-import { CreateSavingDto } from './dto/create-saving.dto';
+import { CreateCategoryBudgetDto } from './dto/create-category-budget.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
-import { UpdateSavingDto } from './dto/update-saving.dto';
+import { UpdateCategoryBudgetDto } from './dto/update-category-budget.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { WealthFilterDto } from './dto/wealth-filter.dto';
-import { WithdrawSavingDto } from './dto/withdraw-saving.dto';
-import { WealthSaving } from './entities/wealth-saving.entity';
+import { WealthCategoryBudget } from './entities/wealth-category-budget.entity';
 import { WealthTransaction } from './entities/wealth-transaction.entity';
 
 type ResolvedFilter =
   | { mode: 'month'; year: number; month: number }
   | { mode: 'year'; start_year: number; end_year: number };
 
+type BudgetStatus = 'on_track' | 'near_limit' | 'over_budget';
+
 @Injectable()
 export class WealthService {
   constructor(
     @InjectRepository(WealthTransaction)
     private readonly transactionRepository: Repository<WealthTransaction>,
-    @InjectRepository(WealthSaving)
-    private readonly savingRepository: Repository<WealthSaving>,
+    @InjectRepository(WealthCategoryBudget)
+    private readonly budgetRepository: Repository<WealthCategoryBudget>,
   ) {}
 
   async getDashboard(userId: string, filterDto: WealthFilterDto) {
@@ -37,8 +40,9 @@ export class WealthService {
   }
 
   async createTransaction(userId: string, dto: CreateTransactionDto) {
-    const signedAmount =
-      dto.category === 'income' ? dto.amount : -Math.abs(dto.amount);
+    const signedAmount = isIncomeCategory(dto.category)
+      ? dto.amount
+      : -Math.abs(dto.amount);
 
     const transaction = this.transactionRepository.create({
       user_id: userId,
@@ -60,8 +64,7 @@ export class WealthService {
     const transaction = await this.findOwnedTransaction(userId, transactionId);
     const category = dto.category ?? transaction.category;
     const amountValue =
-      dto.amount ??
-      Math.abs(Number(transaction.amount));
+      dto.amount ?? Math.abs(Number(transaction.amount));
 
     if (dto.description !== undefined) {
       transaction.description = dto.description.trim();
@@ -73,8 +76,9 @@ export class WealthService {
       transaction.category = dto.category;
     }
     if (dto.amount !== undefined || dto.category !== undefined) {
-      const signedAmount =
-        category === 'income' ? amountValue : -Math.abs(amountValue);
+      const signedAmount = isIncomeCategory(category)
+        ? amountValue
+        : -Math.abs(amountValue);
       transaction.amount = signedAmount.toFixed(2);
     }
 
@@ -88,109 +92,56 @@ export class WealthService {
     return { message: 'Transaction deleted' };
   }
 
-  async createSaving(userId: string, dto: CreateSavingDto) {
-    const saving = this.savingRepository.create({
-      user_id: userId,
-      amount: dto.amount.toFixed(2),
-      month: dto.month,
-      type: 'deposit',
-      reason: null,
-    });
-
-    const saved = await this.savingRepository.save(saving);
-    return this.serializeSaving(saved);
-  }
-
-  async withdrawSaving(userId: string, dto: WithdrawSavingDto) {
-    const balance = await this.getSavingsBalance(userId);
-    if (dto.amount > balance) {
+  async createCategoryBudget(userId: string, dto: CreateCategoryBudgetDto) {
+    if (dto.period_type === 'month' && dto.month === undefined) {
       throw new BadRequestException({
-        amount: [`You only have ${balance.toFixed(2)} available to extract.`],
+        month: ['Month is required for monthly budgets.'],
       });
     }
 
-    const reason = dto.reason.trim();
-    const expenseTransaction = await this.createWithdrawalExpenseTransaction(
+    if (dto.period_type === 'year' && dto.month !== undefined) {
+      throw new BadRequestException({
+        month: ['Month must not be set for yearly budgets.'],
+      });
+    }
+
+    const month = dto.period_type === 'month' ? dto.month! : null;
+    await this.ensureBudgetIsUnique(
       userId,
-      dto.amount,
-      dto.month,
-      reason,
+      dto.category,
+      dto.period_type,
+      dto.year,
+      month,
     );
 
-    const saving = this.savingRepository.create({
+    const budget = this.budgetRepository.create({
       user_id: userId,
+      category: dto.category,
       amount: dto.amount.toFixed(2),
-      month: dto.month,
-      type: 'withdrawal',
-      reason,
-      transaction_id: expenseTransaction.id,
+      period_type: dto.period_type,
+      year: dto.year,
+      month,
     });
 
-    const saved = await this.savingRepository.save(saving);
-    return this.serializeSaving(saved);
+    const saved = await this.budgetRepository.save(budget);
+    return this.serializeBudget(saved);
   }
 
-  async updateSaving(
+  async updateCategoryBudget(
     userId: string,
-    savingId: string,
-    dto: UpdateSavingDto,
+    budgetId: string,
+    dto: UpdateCategoryBudgetDto,
   ) {
-    const saving = await this.findOwnedSaving(userId, savingId);
-    const nextAmount = dto.amount ?? Number(saving.amount);
-    const nextMonth = dto.month ?? saving.month;
-
-    if (saving.type === 'withdrawal') {
-      const nextReason =
-        dto.reason !== undefined ? dto.reason.trim() : saving.reason;
-
-      if (!nextReason) {
-        throw new BadRequestException({
-          reason: ['Reason is required when extracting from savings.'],
-        });
-      }
-
-      const availableBalance = await this.getSavingsBalanceExcluding(
-        userId,
-        savingId,
-      );
-      if (nextAmount > availableBalance) {
-        throw new BadRequestException({
-          amount: [
-            `You only have ${availableBalance.toFixed(2)} available to extract.`,
-          ],
-        });
-      }
-
-      saving.reason = nextReason;
-    }
-
-    saving.amount = nextAmount.toFixed(2);
-    saving.month = nextMonth;
-
-    const saved = await this.savingRepository.save(saving);
-
-    if (saved.type === 'withdrawal' && saved.reason) {
-      await this.syncWithdrawalExpenseTransaction(
-        userId,
-        saved,
-        nextAmount,
-        nextMonth,
-        saved.reason,
-      );
-    }
-
-    return this.serializeSaving(saved);
+    const budget = await this.findOwnedBudget(userId, budgetId);
+    budget.amount = dto.amount.toFixed(2);
+    const saved = await this.budgetRepository.save(budget);
+    return this.serializeBudget(saved);
   }
 
-  async deleteSaving(userId: string, savingId: string) {
-    const saving = await this.findOwnedSaving(userId, savingId);
-
-    if (saving.type === 'withdrawal' && saving.transaction_id) {
-      await this.deleteLinkedTransaction(userId, saving.transaction_id);
-    }
-
-    await this.savingRepository.remove(saving);
-    return { message: 'Saving deleted' };
+  async deleteCategoryBudget(userId: string, budgetId: string) {
+    const budget = await this.findOwnedBudget(userId, budgetId);
+    await this.budgetRepository.remove(budget);
+    return { message: 'Budget deleted' };
   }
 
   private resolveFilter(filterDto: WealthFilterDto): ResolvedFilter {
@@ -218,35 +169,215 @@ export class WealthService {
   }
 
   private async buildDashboard(userId: string, filter: ResolvedFilter) {
-    const [transactions, savings, savingsBalance] = await Promise.all([
-      this.listFilteredTransactions(userId, filter),
-      this.listFilteredSavings(userId, filter),
-      this.getSavingsBalance(userId),
-    ]);
+    const [transactions, netWorth, budgets, budgetTransactions] =
+      await Promise.all([
+        this.listFilteredTransactions(userId, filter),
+        this.getNetWorth(userId),
+        this.listBudgetsForFilter(userId, filter),
+        this.listTransactionsForBudgetSpending(userId, filter),
+      ]);
 
     const serializedTransactions = transactions.map((transaction) =>
       this.serializeTransaction(transaction),
     );
-    const serializedSavings = savings.map((saving) =>
-      this.serializeSaving(saving),
-    );
 
     const monthlyIncome = this.sumIncome(transactions);
     const monthlyExpenses = this.sumExpenses(transactions);
-    const wasteSpending = this.sumWasteSpending(transactions);
 
     return {
       filter,
-      net_worth: savingsBalance,
+      net_worth: netWorth,
       monthly_income: monthlyIncome,
       monthly_expenses: monthlyExpenses,
       net_savings: monthlyIncome - monthlyExpenses,
-      waste_spending: wasteSpending,
-      savings_balance: savingsBalance,
+      waste_spending: this.sumWasteSpending(transactions),
       transactions: serializedTransactions,
-      savings: serializedSavings,
       category_totals: this.getCategoryTotals(transactions),
+      category_budgets: this.buildCategoryBudgets(budgets, budgetTransactions),
     };
+  }
+
+  private async listBudgetsForFilter(
+    userId: string,
+    filter: ResolvedFilter,
+  ) {
+    const query = this.budgetRepository
+      .createQueryBuilder('budget')
+      .where('budget.user_id = :userId', { userId });
+
+    if (filter.mode === 'month') {
+      query.andWhere(
+        new Brackets((qb) => {
+          qb.where(
+            'budget.period_type = :monthType AND budget.year = :year AND budget.month = :month',
+            {
+              monthType: 'month',
+              year: filter.year,
+              month: filter.month,
+            },
+          ).orWhere(
+            'budget.period_type = :yearType AND budget.year = :year',
+            { yearType: 'year', year: filter.year },
+          );
+        }),
+      );
+      query
+        .orderBy('budget.period_type', 'ASC')
+        .addOrderBy('budget.category', 'ASC');
+    } else {
+      query
+        .andWhere('budget.year BETWEEN :startYear AND :endYear', {
+          startYear: filter.start_year,
+          endYear: filter.end_year,
+        })
+        .orderBy('budget.year', 'ASC')
+        .addOrderBy('budget.month', 'ASC', 'NULLS FIRST')
+        .addOrderBy('budget.category', 'ASC');
+    }
+
+    return query.getMany();
+  }
+
+  private async listTransactionsForBudgetSpending(
+    userId: string,
+    filter: ResolvedFilter,
+  ) {
+    const query = this.transactionRepository
+      .createQueryBuilder('transaction')
+      .where('transaction.user_id = :userId', { userId })
+      .andWhere('transaction.amount < 0');
+
+    if (filter.mode === 'month') {
+      query.andWhere('EXTRACT(YEAR FROM transaction.date) = :year', {
+        year: filter.year,
+      });
+      query.andWhere('EXTRACT(MONTH FROM transaction.date) = :month', {
+        month: filter.month,
+      });
+    } else {
+      query.andWhere(
+        'EXTRACT(YEAR FROM transaction.date) BETWEEN :startYear AND :endYear',
+        {
+          startYear: filter.start_year,
+          endYear: filter.end_year,
+        },
+      );
+    }
+
+    return query.getMany();
+  }
+
+  private buildCategoryBudgets(
+    budgets: WealthCategoryBudget[],
+    transactions: WealthTransaction[],
+  ) {
+    return budgets.map((budget) => {
+      const limit = Number(budget.amount);
+      const spent = this.getSpentForBudget(transactions, budget);
+      const remaining = limit - spent;
+      const percentage = limit > 0 ? (spent / limit) * 100 : 0;
+
+      return {
+        id: budget.id,
+        category: budget.category,
+        label: getCategoryLabel(budget.category),
+        period_type: budget.period_type,
+        year: budget.year,
+        month: budget.month ?? undefined,
+        limit,
+        spent,
+        remaining,
+        percentage,
+        status: this.getBudgetStatus(percentage),
+      };
+    });
+  }
+
+  private getSpentForBudget(
+    transactions: WealthTransaction[],
+    budget: WealthCategoryBudget,
+  ) {
+    return transactions.reduce((total, transaction) => {
+      const amount = Number(transaction.amount);
+      if (amount >= 0 || isIncomeCategory(transaction.category)) {
+        return total;
+      }
+
+      const category = WEALTH_EXPENSE_CATEGORIES.some(
+        (entry) => entry.value === transaction.category,
+      )
+        ? transaction.category
+        : 'other';
+
+      if (category !== budget.category) {
+        return total;
+      }
+
+      const year = Number(transaction.date.slice(0, 4));
+      const month = Number(transaction.date.slice(5, 7));
+
+      if (budget.period_type === 'month') {
+        if (year !== budget.year || month !== budget.month) {
+          return total;
+        }
+      } else if (year !== budget.year) {
+        return total;
+      }
+
+      return total + Math.abs(amount);
+    }, 0);
+  }
+
+  private getBudgetStatus(percentage: number): BudgetStatus {
+    if (percentage >= 100) {
+      return 'over_budget';
+    }
+
+    if (percentage >= 80) {
+      return 'near_limit';
+    }
+
+    return 'on_track';
+  }
+
+  private async ensureBudgetIsUnique(
+    userId: string,
+    category: string,
+    periodType: 'month' | 'year',
+    year: number,
+    month: number | null,
+  ) {
+    const query = this.budgetRepository
+      .createQueryBuilder('budget')
+      .where('budget.user_id = :userId', { userId })
+      .andWhere('budget.category = :category', { category })
+      .andWhere('budget.period_type = :periodType', { periodType })
+      .andWhere('budget.year = :year', { year });
+
+    if (month === null) {
+      query.andWhere('budget.month IS NULL');
+    } else {
+      query.andWhere('budget.month = :month', { month });
+    }
+
+    const existing = await query.getOne();
+
+    if (existing) {
+      throw new ConflictException({
+        detail: 'A budget already exists for this category and period.',
+      });
+    }
+  }
+
+  private async getNetWorth(userId: string) {
+    const transactions = await this.transactionRepository.find({
+      where: { user_id: userId },
+    });
+
+    return transactions.reduce(
+      (total, transaction) => total + Number(transaction.amount),
+      0,
+    );
   }
 
   private async listFilteredTransactions(
@@ -267,28 +398,8 @@ export class WealthService {
         month: filter.month,
       });
     } else {
-      query.andWhere('EXTRACT(YEAR FROM transaction.date) BETWEEN :startYear AND :endYear', {
-        startYear: filter.start_year,
-        endYear: filter.end_year,
-      });
-    }
-
-    return query.getMany();
-  }
-
-  private async listFilteredSavings(userId: string, filter: ResolvedFilter) {
-    const query = this.savingRepository
-      .createQueryBuilder('saving')
-      .where('saving.user_id = :userId', { userId })
-      .orderBy('saving.month', 'DESC')
-      .addOrderBy('saving.created_at', 'DESC');
-
-    if (filter.mode === 'month') {
-      const monthKey = `${filter.year}-${String(filter.month).padStart(2, '0')}`;
-      query.andWhere('saving.month = :monthKey', { monthKey });
-    } else {
       query.andWhere(
-        'CAST(SPLIT_PART(saving.month, \'-\', 1) AS INTEGER) BETWEEN :startYear AND :endYear',
+        'EXTRACT(YEAR FROM transaction.date) BETWEEN :startYear AND :endYear',
         {
           startYear: filter.start_year,
           endYear: filter.end_year,
@@ -299,35 +410,13 @@ export class WealthService {
     return query.getMany();
   }
 
-  private async getSavingsBalance(userId: string) {
-    const entries = await this.savingRepository.find({
-      where: { user_id: userId },
-    });
-
-    return this.sumSavingsEntries(entries);
-  }
-
-  private async getSavingsBalanceExcluding(userId: string, excludeId: string) {
-    const entries = await this.savingRepository.find({
-      where: { user_id: userId },
-    });
-
-    return this.sumSavingsEntries(
-      entries.filter((entry) => entry.id !== excludeId),
-    );
-  }
-
-  private sumSavingsEntries(entries: WealthSaving[]) {
-    return entries.reduce((total, entry) => {
-      const amount = Number(entry.amount);
-      return entry.type === 'deposit' ? total + amount : total - amount;
-    }, 0);
-  }
-
   private sumIncome(transactions: WealthTransaction[]) {
     return transactions.reduce((total, transaction) => {
-      const amount = Number(transaction.amount);
-      return amount > 0 ? total + amount : total;
+      if (!isIncomeCategory(transaction.category)) {
+        return total;
+      }
+
+      return total + Math.abs(Number(transaction.amount));
     }, 0);
   }
 
@@ -351,34 +440,26 @@ export class WealthService {
   private getCategoryTotals(transactions: WealthTransaction[]) {
     const totals = new Map<string, number>();
 
-    WEALTH_CATEGORIES.filter((category) => category.value !== 'income').forEach(
-      (category) => {
-        totals.set(category.value, 0);
-      },
-    );
+    WEALTH_EXPENSE_CATEGORIES.forEach((category) => {
+      totals.set(category.value, 0);
+    });
 
     transactions.forEach((transaction) => {
       const amount = Number(transaction.amount);
-      if (amount >= 0) {
+      if (amount >= 0 || isIncomeCategory(transaction.category)) {
         return;
       }
 
-      const key = WEALTH_CATEGORIES.some(
+      const key = WEALTH_EXPENSE_CATEGORIES.some(
         (category) => category.value === transaction.category,
       )
         ? transaction.category
         : 'other';
 
-      if (key === 'income') {
-        return;
-      }
-
       totals.set(key, (totals.get(key) ?? 0) + Math.abs(amount));
     });
 
-    return WEALTH_CATEGORIES.filter(
-      (category) => category.value !== 'income',
-    ).map((category) => ({
+    return WEALTH_EXPENSE_CATEGORIES.map((category) => ({
       value: category.value,
       label: category.label,
       total: totals.get(category.value) ?? 0,
@@ -397,16 +478,16 @@ export class WealthService {
     return transaction;
   }
 
-  private async findOwnedSaving(userId: string, savingId: string) {
-    const saving = await this.savingRepository.findOne({
-      where: { id: savingId, user_id: userId },
+  private async findOwnedBudget(userId: string, budgetId: string) {
+    const budget = await this.budgetRepository.findOne({
+      where: { id: budgetId, user_id: userId },
     });
 
-    if (!saving) {
-      throw new NotFoundException({ detail: 'Saving not found.' });
+    if (!budget) {
+      throw new NotFoundException({ detail: 'Budget not found.' });
     }
 
-    return saving;
+    return budget;
   }
 
   private serializeTransaction(transaction: WealthTransaction) {
@@ -414,81 +495,20 @@ export class WealthService {
       id: transaction.id,
       description: transaction.description,
       amount: Number(transaction.amount),
-      category: getCategoryLabel(transaction.category),
+      category: transaction.category,
       date: transaction.date,
     };
   }
 
-  private serializeSaving(saving: WealthSaving) {
+  private serializeBudget(budget: WealthCategoryBudget) {
     return {
-      id: saving.id,
-      amount: Number(saving.amount),
-      month: saving.month,
-      type: saving.type,
-      ...(saving.reason ? { reason: saving.reason } : {}),
+      id: budget.id,
+      category: budget.category,
+      label: getCategoryLabel(budget.category),
+      period_type: budget.period_type,
+      year: budget.year,
+      month: budget.month ?? undefined,
+      limit: Number(budget.amount),
     };
-  }
-
-  private monthToTransactionDate(month: string) {
-    return `${month}-01`;
-  }
-
-  private async createWithdrawalExpenseTransaction(
-    userId: string,
-    amount: number,
-    month: string,
-    description: string,
-  ) {
-    const transaction = this.transactionRepository.create({
-      user_id: userId,
-      description,
-      amount: (-Math.abs(amount)).toFixed(2),
-      category: 'other',
-      date: this.monthToTransactionDate(month),
-    });
-
-    return this.transactionRepository.save(transaction);
-  }
-
-  private async syncWithdrawalExpenseTransaction(
-    userId: string,
-    saving: WealthSaving,
-    amount: number,
-    month: string,
-    description: string,
-  ) {
-    if (saving.transaction_id) {
-      const transaction = await this.transactionRepository.findOne({
-        where: { id: saving.transaction_id, user_id: userId },
-      });
-
-      if (transaction) {
-        transaction.description = description;
-        transaction.amount = (-Math.abs(amount)).toFixed(2);
-        transaction.date = this.monthToTransactionDate(month);
-        transaction.category = 'other';
-        await this.transactionRepository.save(transaction);
-        return;
-      }
-    }
-
-    const transaction = await this.createWithdrawalExpenseTransaction(
-      userId,
-      amount,
-      month,
-      description,
-    );
-    saving.transaction_id = transaction.id;
-    await this.savingRepository.save(saving);
-  }
-
-  private async deleteLinkedTransaction(userId: string, transactionId: string) {
-    const transaction = await this.transactionRepository.findOne({
-      where: { id: transactionId, user_id: userId },
-    });
-
-    if (transaction) {
-      await this.transactionRepository.remove(transaction);
-    }
   }
 }

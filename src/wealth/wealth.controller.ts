@@ -10,12 +10,11 @@ import {
   Req,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
-import { CreateSavingDto } from './dto/create-saving.dto';
+import { CreateCategoryBudgetDto } from './dto/create-category-budget.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
-import { UpdateSavingDto } from './dto/update-saving.dto';
+import { UpdateCategoryBudgetDto } from './dto/update-category-budget.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { WealthFilterDto } from './dto/wealth-filter.dto';
-import { WithdrawSavingDto } from './dto/withdraw-saving.dto';
 import { WealthService } from './wealth.service';
 
 @Controller('wealth')
@@ -55,36 +54,28 @@ export class WealthController {
     return this.wealthService.deleteTransaction(req.user!.sub, id);
   }
 
-  @Post(['savings', 'savings/'])
-  createSaving(
+  @Post(['budgets', 'budgets/'])
+  createCategoryBudget(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: CreateSavingDto,
+    @Body() dto: CreateCategoryBudgetDto,
   ) {
-    return this.wealthService.createSaving(req.user!.sub, dto);
+    return this.wealthService.createCategoryBudget(req.user!.sub, dto);
   }
 
-  @Post(['savings/withdraw', 'savings/withdraw/'])
-  withdrawSaving(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: WithdrawSavingDto,
-  ) {
-    return this.wealthService.withdrawSaving(req.user!.sub, dto);
-  }
-
-  @Patch(['savings/:id', 'savings/:id/'])
-  updateSaving(
+  @Patch(['budgets/:id', 'budgets/:id/'])
+  updateCategoryBudget(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() dto: UpdateSavingDto,
+    @Body() dto: UpdateCategoryBudgetDto,
   ) {
-    return this.wealthService.updateSaving(req.user!.sub, id, dto);
+    return this.wealthService.updateCategoryBudget(req.user!.sub, id, dto);
   }
 
-  @Delete(['savings/:id', 'savings/:id/'])
-  deleteSaving(
+  @Delete(['budgets/:id', 'budgets/:id/'])
+  deleteCategoryBudget(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
   ) {
-    return this.wealthService.deleteSaving(req.user!.sub, id);
+    return this.wealthService.deleteCategoryBudget(req.user!.sub, id);
   }
 }
