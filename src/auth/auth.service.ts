@@ -365,25 +365,33 @@ export class AuthService {
     return { access: this.signAccessToken(user) };
   }
 
-  async jwtVerify(dto: JwtVerifyDto) {
+  verifyAccessToken(token: string) {
     const secret = this.getJwtSecret();
 
     try {
-      const decoded = jwt.verify(dto.token, secret);
+      const decoded = jwt.verify(token, secret);
       if (typeof decoded === 'string') {
         throw new Error('Invalid token');
       }
       const payload = decoded as jwt.JwtPayload;
-      if (payload.typ !== 'access') {
+      if (payload.typ !== 'access' || typeof payload.sub !== 'string') {
         throw new Error('Invalid token type');
       }
+
+      return {
+        sub: payload.sub,
+        email: typeof payload.email === 'string' ? payload.email : '',
+      };
     } catch {
       throw new UnauthorizedException({
         detail: 'Token is invalid or expired',
         code: 'token_not_valid',
       });
     }
+  }
 
+  async jwtVerify(dto: JwtVerifyDto) {
+    this.verifyAccessToken(dto.token);
     return {};
   }
 
