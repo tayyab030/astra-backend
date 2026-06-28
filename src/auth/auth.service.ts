@@ -14,14 +14,17 @@ import { Repository } from 'typeorm';
 import { JwtCreateDto } from './dto/jwt-create.dto';
 import { JwtRefreshDto } from './dto/jwt-refresh.dto';
 import { JwtVerifyDto } from './dto/jwt-verify.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { ResendOtpLoginDto } from './dto/resend-otp-login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
-import { sendOtpEmail } from './email';
+import { sendOtpEmail, sendPasswordResetEmail } from './email';
 import { User } from './entities/user.entity';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
+const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
 const ACCESS_TOKEN_TTL = '60m';
 const REFRESH_TOKEN_TTL = '7d';
@@ -105,6 +108,14 @@ export class AuthService {
       user.otp_token &&
         user.otp_expires_at &&
         user.otp_expires_at.getTime() > Date.now(),
+    );
+  }
+
+  private isPasswordResetStillValid(user: User) {
+    return Boolean(
+      user.password_reset_token &&
+        user.password_reset_expires_at &&
+        user.password_reset_expires_at.getTime() > Date.now(),
     );
   }
 
@@ -354,25 +365,125 @@ export class AuthService {
     return { access: this.signAccessToken(user) };
   }
 
-  async jwtVerify(dto: JwtVerifyDto) {
+  verifyAccessToken(token: string) {
     const secret = this.getJwtSecret();
 
     try {
-      const decoded = jwt.verify(dto.token, secret);
+      const decoded = jwt.verify(token, secret);
       if (typeof decoded === 'string') {
         throw new Error('Invalid token');
       }
       const payload = decoded as jwt.JwtPayload;
-      if (payload.typ !== 'access') {
+      if (payload.typ !== 'access' || typeof payload.sub !== 'string') {
         throw new Error('Invalid token type');
       }
+
+      return {
+        sub: payload.sub,
+        email: typeof payload.email === 'string' ? payload.email : '',
+      };
     } catch {
       throw new UnauthorizedException({
         detail: 'Token is invalid or expired',
         code: 'token_not_valid',
       });
     }
+  }
 
+  async jwtVerify(dto: JwtVerifyDto) {
+    this.verifyAccessToken(dto.token);
     return {};
+  }
+
+  async requestPasswordReset(dto: ForgotPasswordDto) {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      return {
+        message:
+          'If an account exists with that email, a reset link has been sent.',
+        sent: true,
+      };
+    }
+
+    if (this.isPasswordResetStillValid(user)) {
+      const remainingMs =
+        user.password_reset_expires_at!.getTime() - Date.now();
+      return {
+        message:
+          'A recovery link was already sent and is still valid. Check your inbox.',
+        sent: false,
+        remaining_time_seconds: Math.max(
+          0,
+          Math.floor(remainingMs / 1000),
+        ),
+      };
+    }
+
+    user.password_reset_token = randomUUID();
+    user.password_reset_expires_at = new Date(
+      Date.now() + PASSWORD_RESET_TTL_MS,
+    );
+    await this.userRepository.save(user);
+
+    const frontendUrl =
+      process.env.FRONTEND_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
+    const resetUrl = `${frontendUrl}/auth/reset-password?token=${user.password_reset_token}`;
+    await sendPasswordResetEmail({ to: user.email, resetUrl });
+
+    return {
+      message:
+        'If an account exists with that email, a reset link has been sent.',
+      sent: true,
+    };
+  }
+
+  async getPasswordResetStatus(token: string) {
+    const user = await this.userRepository.findOne({
+      where: { password_reset_token: token },
+    });
+    if (!user || !user.password_reset_expires_at) {
+      throw new NotFoundException({ detail: 'Invalid reset token.' });
+    }
+
+    const remainingMs =
+      user.password_reset_expires_at.getTime() - Date.now();
+    if (remainingMs <= 0) {
+      throw new NotFoundException({ detail: 'Invalid reset token.' });
+    }
+
+    return {
+      remaining_time_seconds: Math.max(0, Math.floor(remainingMs / 1000)),
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    if (dto.password !== dto.confirmPassword) {
+      throw new BadRequestException({
+        confirmPassword: ["Passwords don't match"],
+      });
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { password_reset_token: dto.token },
+    });
+    if (!user || !user.password_reset_expires_at) {
+      throw new BadRequestException({
+        token: ['Invalid or expired reset link.'],
+      });
+    }
+    if (user.password_reset_expires_at.getTime() < Date.now()) {
+      throw new BadRequestException({
+        token: ['Invalid or expired reset link.'],
+      });
+    }
+
+    user.password = await bcrypt.hash(dto.password, 10);
+    user.password_reset_token = null;
+    user.password_reset_expires_at = null;
+    await this.userRepository.save(user);
+
+    return { message: 'Password reset successful' };
   }
 }

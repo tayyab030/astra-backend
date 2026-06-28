@@ -1,12 +1,14 @@
 import { Logger } from '@nestjs/common';
-import dns from 'dns';
-import net from 'net';
 import nodemailer from 'nodemailer';
-import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 type SendOtpEmailInput = {
   to: string;
   otp: string;
+};
+
+type SendPasswordResetEmailInput = {
+  to: string;
+  resetUrl: string;
 };
 
 const logger = new Logger('EmailService');
@@ -18,22 +20,6 @@ function getEnv(name: string) {
 /** Gmail app passwords are often pasted with spaces — strip them for auth. */
 function normalizeSmtpPassword(pass: string | undefined) {
   return pass?.replace(/\s+/g, '') ?? '';
-}
-
-async function resolveSmtpIpv4Host(hostname: string) {
-  if (net.isIP(hostname)) {
-    return { host: hostname, servername: hostname };
-  }
-
-  const addresses = await dns.promises.resolve4(hostname);
-  if (!addresses.length) {
-    throw new Error(`No IPv4 address found for SMTP host ${hostname}`);
-  }
-
-  return {
-    host: addresses[0],
-    servername: hostname,
-  };
 }
 
 export async function sendOtpEmail({
@@ -55,17 +41,12 @@ export async function sendOtpEmail({
   const secure = port === 465;
 
   try {
-    const { host: resolvedHost, servername } = await resolveSmtpIpv4Host(host);
-
-    const transportOptions = {
-      host: resolvedHost,
+    const transporter = nodemailer.createTransport({
+      host,
       port,
       secure,
       auth: { user, pass },
-      tls: { servername },
-    } as SMTPTransport.Options;
-
-    const transporter = nodemailer.createTransport(transportOptions);
+    });
 
     const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5;">
@@ -87,6 +68,61 @@ export async function sendOtpEmail({
   } catch (error) {
     logger.error(
       `Failed to send OTP email to ${to}`,
+      error instanceof Error ? error.stack : String(error),
+    );
+    return false;
+  }
+}
+
+export async function sendPasswordResetEmail({
+  to,
+  resetUrl,
+}: SendPasswordResetEmailInput): Promise<boolean> {
+  const host = getEnv('SMTP_HOST');
+  const portRaw = getEnv('SMTP_PORT') ?? '587';
+  const user = getEnv('SMTP_USER');
+  const pass = normalizeSmtpPassword(getEnv('SMTP_PASS'));
+  const from = getEnv('SMTP_FROM') ?? 'no-reply@example.com';
+
+  if (!host || !user || !pass) {
+    logger.warn('SMTP not configured — skipping password reset email');
+    return false;
+  }
+
+  const port = Number(portRaw);
+  const secure = port === 465;
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+    });
+
+    const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+      <h2>Reset your ASTRA password</h2>
+      <p>Click the link below to set a new password for your account:</p>
+      <p style="margin: 24px 0;">
+        <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background: #0891b2; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold;">Reset Password</a>
+      </p>
+      <p style="color:#6b7280; font-size: 12px;">This link expires in 10 minutes. If you did not request a password reset, you can ignore this email.</p>
+      <p style="color:#6b7280; font-size: 12px; word-break: break-all;">${resetUrl}</p>
+    </div>
+  `;
+
+    await transporter.sendMail({
+      from,
+      to,
+      subject: 'Reset your ASTRA password',
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    logger.error(
+      `Failed to send password reset email to ${to}`,
       error instanceof Error ? error.stack : String(error),
     );
     return false;

@@ -43,6 +43,12 @@ export class User {
   @Column({ type: 'int', default: 0 })
   otp_attempts: number;
 
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  password_reset_token: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  password_reset_expires_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 }
