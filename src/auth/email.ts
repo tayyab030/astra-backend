@@ -1,18 +1,15 @@
 import nodemailer from 'nodemailer';
 
-type SendVerificationEmailInput = {
+type SendOtpEmailInput = {
   to: string;
-  verifyUrl: string;
+  otp: string;
 };
 
 function getEnv(name: string) {
   return process.env[name];
 }
 
-export async function sendVerificationEmail({
-  to,
-  verifyUrl,
-}: SendVerificationEmailInput) {
+export async function sendOtpEmail({ to, otp }: SendOtpEmailInput) {
   const host = getEnv('SMTP_HOST');
   const portRaw = getEnv('SMTP_PORT') ?? '587';
   const user = getEnv('SMTP_USER');
@@ -35,24 +32,17 @@ export async function sendVerificationEmail({
 
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5;">
-      <h2>Verify your email</h2>
-      <p>Click the button below to verify your email address.</p>
-      <p style="margin: 24px 0;">
-        <a
-          href="${verifyUrl}"
-          style="display: inline-block; background: #111827; color: #ffffff; padding: 12px 18px; text-decoration: none; border-radius: 8px;"
-        >Verify email</a>
-      </p>
-      <p>If the button doesn’t work, open this link:</p>
-      <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-      <p style="color:#6b7280; font-size: 12px;">This link expires in 15 minutes.</p>
+      <h2>Verify your neural profile</h2>
+      <p>Enter this 6-digit verification code in ASTRA:</p>
+      <p style="font-size: 32px; letter-spacing: 8px; font-weight: bold; margin: 24px 0;">${otp}</p>
+      <p style="color:#6b7280; font-size: 12px;">This code expires in 5 minutes.</p>
     </div>
   `;
 
   await transporter.sendMail({
     from,
     to,
-    subject: 'Verify your email',
+    subject: 'Your ASTRA verification code',
     html,
   });
 }

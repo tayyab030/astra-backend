@@ -1,19 +1,30 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
-import { LoginDto } from './dto/login.dto';
+import { JwtCreateDto } from './dto/jwt-create.dto';
+import { JwtRefreshDto } from './dto/jwt-refresh.dto';
+import { JwtVerifyDto } from './dto/jwt-verify.dto';
 import { RegisterDto } from './dto/register.dto';
-import { sendVerificationEmail } from './email';
+import { ResendOtpDto } from './dto/resend-otp.dto';
+import { ResendOtpLoginDto } from './dto/resend-otp-login.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { sendOtpEmail } from './email';
 import { User } from './entities/user.entity';
+
+const OTP_TTL_MS = 5 * 60 * 1000;
+const MAX_OTP_ATTEMPTS = 3;
+const ACCESS_TOKEN_TTL = '60m';
+const REFRESH_TOKEN_TTL = '7d';
 
 @Injectable()
 export class AuthService {
@@ -22,260 +33,346 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
   ) {}
 
+  private getJwtSecret() {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new InternalServerErrorException({
+        message: 'JWT_SECRET is not configured',
+        error: 'Internal Server Error',
+      });
+    }
+    return secret;
+  }
+
+  private serializeUser(user: User) {
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+    };
+  }
+
+  private signAccessToken(user: User) {
+    return jwt.sign(
+      { sub: user.id, email: user.email, typ: 'access' },
+      this.getJwtSecret(),
+      { expiresIn: ACCESS_TOKEN_TTL },
+    );
+  }
+
+  private signRefreshToken(user: User) {
+    return jwt.sign(
+      { sub: user.id, typ: 'refresh' },
+      this.getJwtSecret(),
+      { expiresIn: REFRESH_TOKEN_TTL },
+    );
+  }
+
+  private generateOtp() {
+    return String(Math.floor(100000 + Math.random() * 900000));
+  }
+
+  private findUserByLogin(login: string) {
+    const normalized = login.trim();
+    const where = normalized.includes('@')
+      ? { email: normalized.toLowerCase() }
+      : { username: normalized };
+    return this.userRepository.findOne({ where });
+  }
+
+  private async findUserByLoginAndPassword(login: string, password: string) {
+    const user = await this.findUserByLogin(login);
+    if (!user) {
+      throw new UnauthorizedException({
+        non_field_errors: ['Unable to log in with provided credentials.'],
+      });
+    }
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      throw new UnauthorizedException({
+        non_field_errors: ['Unable to log in with provided credentials.'],
+      });
+    }
+
+    return user;
+  }
+
+  private isOtpStillValid(user: User) {
+    return Boolean(
+      user.otp_token &&
+        user.otp_expires_at &&
+        user.otp_expires_at.getTime() > Date.now(),
+    );
+  }
+
+  private async issueOtp(user: User) {
+    const otp = this.generateOtp();
+    user.otp_code = otp;
+    user.otp_expires_at = new Date(Date.now() + OTP_TTL_MS);
+    user.otp_token = randomUUID();
+    user.otp_attempts = 0;
+    await this.userRepository.save(user);
+    await sendOtpEmail({ to: user.email, otp });
+    return user;
+  }
+
   async register(dto: RegisterDto) {
     if (dto.password !== dto.confirmPassword) {
       throw new BadRequestException({
-        message: "Passwords don't match",
-        error: 'Bad Request',
+        confirmPassword: ["Passwords don't match"],
       });
     }
     if (dto.terms !== true) {
       throw new BadRequestException({
-        message: 'You must accept the terms and conditions',
-        error: 'Bad Request',
+        terms: ['You must accept the terms and conditions'],
       });
     }
 
+    const email = dto.email.trim().toLowerCase();
+    const username = dto.username.trim();
+
     const existingByUsername = await this.userRepository.findOne({
-      where: { username: dto.username },
+      where: { username },
     });
     if (existingByUsername) {
       throw new ConflictException({
-        message: 'Username is already taken',
-        error: 'Conflict',
+        username: ['A user with that username already exists.'],
       });
     }
 
     const existingByEmail = await this.userRepository.findOne({
-      where: { email: dto.email },
+      where: { email },
     });
     if (existingByEmail) {
       throw new ConflictException({
-        message: 'Email is already registered',
-        error: 'Conflict',
+        email: ['user with this email already exists.'],
       });
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      throw new InternalServerErrorException({
-        message: 'JWT_SECRET is not configured',
-        error: 'Internal Server Error',
-      });
-    }
-
     const user = this.userRepository.create({
-      first_name: dto.first_name,
-      last_name: dto.last_name,
-      username: dto.username,
-      email: dto.email,
+      first_name: dto.first_name.trim(),
+      last_name: dto.last_name.trim(),
+      username,
+      email,
       password: hashedPassword,
     });
     const saved = await this.userRepository.save(user);
-
-    const token = jwt.sign({ sub: saved.id, email: saved.email }, secret, {
-      expiresIn: '15m',
-    });
-    saved.token = token;
-    await this.userRepository.save(saved);
-
-    const apiPublicUrl =
-      process.env.API_PUBLIC_URL ??
-      process.env.APP_URL ??
-      'http://localhost:3000';
-    const verifyUrl = `${apiPublicUrl.replace(/\/$/, '')}/api/auth/verify?token=${encodeURIComponent(token)}`;
-    await sendVerificationEmail({ to: saved.email, verifyUrl });
+    const withOtp = await this.issueOtp(saved);
 
     return {
       message: 'Registration successful',
-      user: {
-        id: saved.id,
-        first_name: saved.first_name,
-        last_name: saved.last_name,
-        username: saved.username,
-        email: saved.email,
-        is_verified: saved.is_verified,
-        verified_at: saved.verified_at,
-        created_at: saved.created_at,
-      },
+      otp_token: withOtp.otp_token,
     };
   }
 
-  async verifyEmail(token: string) {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      throw new InternalServerErrorException({
-        message: 'JWT_SECRET is not configured',
-        error: 'Internal Server Error',
-      });
+  async getOtpStatus(token: string) {
+    const user = await this.userRepository.findOne({
+      where: { otp_token: token },
+    });
+    if (!user || user.is_verified) {
+      throw new NotFoundException({ detail: 'Invalid OTP token.' });
     }
 
-    let payload: jwt.JwtPayload;
-    try {
-      const decoded = jwt.verify(token, secret);
-      if (typeof decoded === 'string') {
-        throw new Error('Invalid token');
-      }
-      payload = decoded;
-    } catch {
+    const remainingMs = user.otp_expires_at
+      ? user.otp_expires_at.getTime() - Date.now()
+      : 0;
+
+    return {
+      remaining_time_seconds: Math.max(0, Math.floor(remainingMs / 1000)),
+      user_id: user.id,
+    };
+  }
+
+  async verifyOtp(dto: VerifyOtpDto) {
+    const user = await this.userRepository.findOne({
+      where: { id: dto.user_id },
+    });
+    if (!user) {
+      throw new BadRequestException({ user_id: ['User not found.'] });
+    }
+    if (user.is_verified) {
+      return { message: 'Email already verified' };
+    }
+    if (!user.otp_code || !user.otp_expires_at) {
       throw new BadRequestException({
-        message: 'Invalid or expired token',
-        error: 'Bad Request',
+        otp_code: ['No verification code found.'],
       });
     }
-
-    const userId = payload.sub;
-    if (typeof userId !== 'string') {
+    if (user.otp_expires_at.getTime() < Date.now()) {
       throw new BadRequestException({
-        message: 'Invalid token payload',
-        error: 'Bad Request',
+        otp_code: ['Verification code expired.'],
       });
     }
+    if (user.otp_code !== dto.otp_code) {
+      user.otp_attempts += 1;
+      await this.userRepository.save(user);
 
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user || user.token !== token) {
+      const attemptsUsed = String(user.otp_attempts);
+      const remaining = String(Math.max(0, MAX_OTP_ATTEMPTS - user.otp_attempts));
+
       throw new BadRequestException({
-        message: 'Invalid or expired token',
-        error: 'Bad Request',
+        otp_code: ['Invalid OTP code.'],
+        attempts_used: [attemptsUsed],
+        max_attempts: [String(MAX_OTP_ATTEMPTS)],
+        remaining_attempts: [remaining],
+        error_type: ['invalid_code'],
       });
     }
 
     user.is_verified = true;
     user.verified_at = new Date();
-    user.token = null;
+    user.otp_code = null;
+    user.otp_expires_at = null;
+    user.otp_token = null;
+    user.otp_attempts = 0;
     await this.userRepository.save(user);
 
-    return { message: 'Email verified' };
+    return { message: 'OTP verified successfully' };
   }
 
-  async login(dto: LoginDto) {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      throw new InternalServerErrorException({
-        message: 'JWT_SECRET is not configured',
-        error: 'Internal Server Error',
+  async resendOtp(dto: ResendOtpDto) {
+    const user = await this.userRepository.findOne({
+      where: { id: dto.user_id },
+    });
+    if (!user) {
+      throw new BadRequestException({ user_id: ['User not found.'] });
+    }
+    if (user.is_verified) {
+      throw new BadRequestException({
+        user_id: ['Email is already verified.'],
+      });
+    }
+    if (user.otp_expires_at && user.otp_expires_at.getTime() > Date.now()) {
+      throw new BadRequestException({
+        otp_code: ['Verification code is still valid.'],
       });
     }
 
-    const normalized = dto.identifier.trim();
-    const where = normalized.includes('@')
-      ? { email: normalized.toLowerCase() }
-      : { username: normalized };
+    const updated = await this.issueOtp(user);
+    return {
+      otp: {
+        token: updated.otp_token,
+      },
+    };
+  }
 
-    const user = await this.userRepository.findOne({ where });
+  async resendOtpFromLogin(dto: ResendOtpLoginDto) {
+    const user = await this.findUserByLoginAndPassword(dto.login, dto.password);
+
+    if (user.is_verified) {
+      throw new BadRequestException({
+        non_field_errors: ['Email is already verified.'],
+      });
+    }
+
+    if (this.isOtpStillValid(user)) {
+      return {
+        message: 'Verification code is still valid.',
+        otp: { token: user.otp_token },
+        resent: false,
+      };
+    }
+
+    const updated = await this.issueOtp(user);
+    return {
+      message: 'New verification code sent!',
+      otp: { token: updated.otp_token },
+      resent: true,
+    };
+  }
+
+  async jwtCreate(dto: JwtCreateDto) {
+    const user = await this.findUserByLogin(dto.login);
     if (!user) {
       throw new UnauthorizedException({
-        message: 'Invalid email or password',
-        error: 'Unauthorized',
+        non_field_errors: ['Unable to log in with provided credentials.'],
       });
     }
 
     const ok = await bcrypt.compare(dto.password, user.password);
     if (!ok) {
       throw new UnauthorizedException({
-        message: 'Invalid email or password',
-        error: 'Unauthorized',
+        non_field_errors: ['Unable to log in with provided credentials.'],
       });
     }
 
     if (!user.is_verified) {
-      throw new ForbiddenException({
-        message: 'Please verify your email before signing in.',
-        error: 'Forbidden',
+      throw new UnauthorizedException({
+        non_field_errors: ['Email is not verified.'],
+        is_unverified: true,
+        user_id: user.id,
+        otp_token: user.otp_token,
+        otp_still_valid: this.isOtpStillValid(user),
       });
     }
 
-    const accessToken = jwt.sign(
-      { sub: user.id, email: user.email, typ: 'access' },
-      secret,
-      { expiresIn: '7d' },
-    );
-
     return {
-      access_token: accessToken,
-      token_type: 'Bearer' as const,
-      expires_in: 60 * 60 * 24 * 7,
-      user: {
-        id: user.id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        username: user.username,
-        email: user.email,
-        is_verified: user.is_verified,
-        created_at: user.created_at,
-      },
+      access: this.signAccessToken(user),
+      refresh: this.signRefreshToken(user),
+      user: this.serializeUser(user),
     };
   }
 
-  async resendVerification(identifier: string) {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      throw new InternalServerErrorException({
-        message: 'JWT_SECRET is not configured',
-        error: 'Internal Server Error',
-      });
-    }
-
-    const normalized = identifier.trim();
-    const where = normalized.includes('@')
-      ? { email: normalized.toLowerCase() }
-      : { username: normalized };
-
-    const user = await this.userRepository.findOne({ where });
-    if (!user) {
-      throw new BadRequestException({
-        message: 'User not found',
-        error: 'Bad Request',
-      });
-    }
-    if (user.is_verified) {
-      throw new BadRequestException({
-        message: 'Email is already verified',
-        error: 'Bad Request',
-      });
-    }
-    if (!user.token) {
-      throw new BadRequestException({
-        message: 'No verification request found',
-        error: 'Bad Request',
-      });
-    }
+  async jwtRefresh(dto: JwtRefreshDto) {
+    const secret = this.getJwtSecret();
+    let payload: jwt.JwtPayload;
 
     try {
-      jwt.verify(user.token, secret);
-      throw new BadRequestException({
-        message:
-          'A verification email has already been sent. Please check your inbox (and spam folder).',
-        error: 'Bad Request',
+      const decoded = jwt.verify(dto.refresh, secret);
+      if (typeof decoded === 'string') {
+        throw new Error('Invalid token');
+      }
+      payload = decoded;
+    } catch {
+      throw new UnauthorizedException({
+        detail: 'Token is invalid or expired',
+        code: 'token_not_valid',
       });
-    } catch (err: unknown) {
-      if (err instanceof BadRequestException) {
-        throw err;
-      }
-      const isExpired = err instanceof jwt.TokenExpiredError;
-      if (!isExpired) {
-        throw new BadRequestException({
-          message:
-            'Invalid verification token. Please contact support or try signing up again.',
-          error: 'Bad Request',
-        });
-      }
     }
 
-    const newToken = jwt.sign({ sub: user.id, email: user.email }, secret, {
-      expiresIn: '15m',
+    if (payload.typ !== 'refresh' || typeof payload.sub !== 'string') {
+      throw new UnauthorizedException({
+        detail: 'Token is invalid or expired',
+        code: 'token_not_valid',
+      });
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: payload.sub },
     });
-    user.token = newToken;
-    await this.userRepository.save(user);
+    if (!user) {
+      throw new UnauthorizedException({
+        detail: 'Token is invalid or expired',
+        code: 'token_not_valid',
+      });
+    }
 
-    const apiPublicUrl =
-      process.env.API_PUBLIC_URL ??
-      process.env.APP_URL ??
-      'http://localhost:3000';
-    const verifyUrl = `${apiPublicUrl.replace(/\/$/, '')}/api/auth/verify?token=${encodeURIComponent(newToken)}`;
-    await sendVerificationEmail({ to: user.email, verifyUrl });
+    return { access: this.signAccessToken(user) };
+  }
 
-    return { message: 'Verification email resent' };
+  async jwtVerify(dto: JwtVerifyDto) {
+    const secret = this.getJwtSecret();
+
+    try {
+      const decoded = jwt.verify(dto.token, secret);
+      if (typeof decoded === 'string') {
+        throw new Error('Invalid token');
+      }
+      const payload = decoded as jwt.JwtPayload;
+      if (payload.typ !== 'access') {
+        throw new Error('Invalid token type');
+      }
+    } catch {
+      throw new UnauthorizedException({
+        detail: 'Token is invalid or expired',
+        code: 'token_not_valid',
+      });
+    }
+
+    return {};
   }
 }

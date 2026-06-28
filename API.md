@@ -1,39 +1,57 @@
 # API
 
-Base: `http://localhost:3000/api` (port from `PORT`).
+Base: `http://localhost:3001/api` (port from `PORT`).
 
-Use `Content-Type: application/json` for POST bodies.
+Aligned with the `astra-frontend` `tayyab-dev` branch. Use `Content-Type: application/json` and `withCredentials: true` for auth requests.
 
-## `GET /`
+## `POST /auth/users/`
 
-Returns `Hello World!` as plain text.
+Register. Body: `first_name`, `last_name`, `username`, `email`, `password`, `confirmPassword`, `terms` (must be `true`).
 
-## `POST /auth/users`
+**200:** `{ "message": "Registration successful", "otp_token": "<uuid>" }`
 
-Register. Body: `first_name`, `last_name`, `username` (3–20 chars, alphanumeric and `@ . + - _`), `email`, `password` and `confirmPassword` (≥8 chars with upper, lower, number, special char), `terms` (must be `true`). Passwords must match.
+**400:** field errors as `{ "field": ["message"] }`. **409:** username or email taken.
 
-Sends a verification email to the provided address.
+## `GET /otp/:token/status/`
 
-**200/201:** `{ "message": "Registration successful", "user": { id, first_name, last_name, username, email, is_verified, verified_at, created_at } }`
+OTP countdown for the verify page. **200:** `{ "remaining_time_seconds": 300, "user_id": "<uuid>" }`
 
-**400:** validation / passwords don’t match / terms not accepted. **409:** username or email taken.
+## `POST /otp/verify/`
 
-## `GET /auth/verify?token=...`
+Body: `{ "user_id": "<uuid>", "otp_code": "123456" }`
 
-Verifies the user email using the 15-minute link from email.
+**200:** `{ "message": "OTP verified successfully" }`
 
-## `POST /auth/resend-verification`
+**400:** invalid OTP with `{ "otp_code", "attempts_used", "max_attempts", "remaining_attempts", "error_type" }`.
 
-Resends verification email (only if user is **not verified** and the **previous token is expired**).
+## `POST /otp/create/`
 
-Body: `{ "identifier": "<email or username>" }`
+Resend OTP after expiry. Body: `{ "user_id": "<uuid>" }`
 
-## `POST /auth/login`
+**200:** `{ "otp": { "token": "<new-uuid>" } }`
 
-Body: `{ "identifier": "<email or username>", "password": "<password>" }`
+## `POST /otp/resend-login/`
 
-**200:** `{ "access_token": "<jwt (7d)>", "token_type": "Bearer", "expires_in": 604800, "user": { id, first_name, last_name, username, email, is_verified, created_at } }`
+Resend or continue OTP flow from login for unverified users. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
-**401:** invalid email/username or password
+**200:** `{ "message": "...", "otp": { "token": "<uuid>" }, "resent": true | false }`
 
-**403:** email not verified (sign-in blocked until verification; applies whether you sign in with email or username)
+If the current code is still valid, returns the existing token without sending a new email (`resent: false`).
+
+## `POST /auth/jwt/create/`
+
+Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
+
+**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name } }`
+
+**401:** `{ "non_field_errors": ["Unable to log in with provided credentials."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
+
+## `POST /auth/jwt/refresh/`
+
+Body: `{ "refresh": "<refresh-jwt>" }` — **200:** `{ "access": "<jwt>" }`
+
+## `POST /auth/jwt/verify/`
+
+Body: `{ "token": "<access-jwt>" }` — **200:** `{}` if valid.
+
+Use `Authorization: JWT <access>` on protected routes.
