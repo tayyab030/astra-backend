@@ -55,3 +55,27 @@ Body: `{ "refresh": "<refresh-jwt>" }` — **200:** `{ "access": "<jwt>" }`
 Body: `{ "token": "<access-jwt>" }` — **200:** `{}` if valid.
 
 Use `Authorization: JWT <access>` on protected routes.
+
+## `POST /auth/password/forgot/`
+
+Request a password reset link. Body: `{ "email": "user@example.com" }`
+
+**200:** `{ "message": "If an account exists with that email, a reset link has been sent.", "sent": true }`
+
+When a reset link was already sent and is still valid (within 10 minutes): `{ "message": "A recovery link was already sent and is still valid. Check your inbox.", "sent": false, "remaining_time_seconds": 540 }`
+
+Always returns the same generic message for unknown emails (`sent: true`).
+
+## `GET /auth/password/:token/status/`
+
+Reset token countdown for the reset-password page. **200:** `{ "remaining_time_seconds": 600 }`
+
+**404:** `{ "detail": "Invalid reset token." }`
+
+## `POST /auth/password/reset/`
+
+Set a new password. Body: `{ "token": "<uuid>", "password": "...", "confirmPassword": "..." }`
+
+**200:** `{ "message": "Password reset successful" }`
+
+**400:** invalid/expired token or validation errors as `{ "field": ["message"] }`.
