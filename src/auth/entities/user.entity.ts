@@ -31,8 +31,17 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   verified_at: Date | null;
 
-  @Column({ type: 'text', nullable: true })
-  token: string | null;
+  @Column({ type: 'varchar', length: 6, nullable: true })
+  otp_code: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  otp_expires_at: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  otp_token: string | null;
+
+  @Column({ type: 'int', default: 0 })
+  otp_attempts: number;
 
   @CreateDateColumn()
   created_at: Date;

@@ -1,9 +1,9 @@
 import { IsString, MinLength } from 'class-validator';
 
-export class LoginDto {
+export class JwtCreateDto {
   @IsString()
-  @MinLength(1, { message: 'Email or username is required' })
-  identifier: string;
+  @MinLength(1, { message: 'Login is required' })
+  login: string;
 
   @IsString()
   @MinLength(1, { message: 'Password is required' })
