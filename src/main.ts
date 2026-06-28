@@ -1,7 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
+import dns from 'dns';
 import { AppModule } from './app.module';
 import { createValidationPipe } from './validation.pipe';
+
+dns.setDefaultResultOrder('ipv4first');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
