@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
+import dns from 'dns';
 import nodemailer from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 type SendOtpEmailInput = {
   to: string;
@@ -36,12 +38,21 @@ export async function sendOtpEmail({
   const secure = port === 465;
 
   try {
-    const transporter = nodemailer.createTransport({
+    // Force IPv4 — Render cannot reach Gmail SMTP over IPv6 (ENETUNREACH).
+    const transportOptions = {
       host,
       port,
       secure,
       auth: { user, pass },
-    });
+      lookup: (
+        hostname: string,
+        _options: unknown,
+        callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
+      ) => {
+        dns.lookup(hostname, { family: 4 }, callback);
+      },
+    } as SMTPTransport.Options;
+    const transporter = nodemailer.createTransport(transportOptions);
 
     const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5;">
