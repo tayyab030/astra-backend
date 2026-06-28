@@ -30,7 +30,9 @@ import { AuthModule } from './auth/auth.module';
               ssl: process.env.DATABASE_SSL !== 'false',
             }),
         autoLoadEntities: true,
-        synchronize: process.env.NODE_ENV !== 'production',
+        synchronize:
+          process.env.DATABASE_SYNC === 'true' ||
+          process.env.NODE_ENV !== 'production',
       }),
     }),
     AuthModule,

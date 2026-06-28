@@ -114,9 +114,9 @@ export class AuthService {
     user.otp_expires_at = new Date(Date.now() + OTP_TTL_MS);
     user.otp_token = randomUUID();
     user.otp_attempts = 0;
-    await this.userRepository.save(user);
-    await sendOtpEmail({ to: user.email, otp });
-    return user;
+    const saved = await this.userRepository.save(user);
+    await sendOtpEmail({ to: saved.email, otp });
+    return saved;
   }
 
   async register(dto: RegisterDto) {

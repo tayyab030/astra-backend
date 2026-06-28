@@ -37,7 +37,7 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   otp_expires_at: Date | null;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 36, nullable: true })
   otp_token: string | null;
 
   @Column({ type: 'int', default: 0 })
