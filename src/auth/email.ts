@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import dns from 'dns';
+import net from 'net';
 import nodemailer from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
@@ -17,6 +18,22 @@ function getEnv(name: string) {
 /** Gmail app passwords are often pasted with spaces — strip them for auth. */
 function normalizeSmtpPassword(pass: string | undefined) {
   return pass?.replace(/\s+/g, '') ?? '';
+}
+
+async function resolveSmtpIpv4Host(hostname: string) {
+  if (net.isIP(hostname)) {
+    return { host: hostname, servername: hostname };
+  }
+
+  const addresses = await dns.promises.resolve4(hostname);
+  if (!addresses.length) {
+    throw new Error(`No IPv4 address found for SMTP host ${hostname}`);
+  }
+
+  return {
+    host: addresses[0],
+    servername: hostname,
+  };
 }
 
 export async function sendOtpEmail({
@@ -38,20 +55,16 @@ export async function sendOtpEmail({
   const secure = port === 465;
 
   try {
-    // Force IPv4 — Render cannot reach Gmail SMTP over IPv6 (ENETUNREACH).
+    const { host: resolvedHost, servername } = await resolveSmtpIpv4Host(host);
+
     const transportOptions = {
-      host,
+      host: resolvedHost,
       port,
       secure,
       auth: { user, pass },
-      lookup: (
-        hostname: string,
-        _options: unknown,
-        callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
-      ) => {
-        dns.lookup(hostname, { family: 4 }, callback);
-      },
+      tls: { servername },
     } as SMTPTransport.Options;
+
     const transporter = nodemailer.createTransport(transportOptions);
 
     const html = `
