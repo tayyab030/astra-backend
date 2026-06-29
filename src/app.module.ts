@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { GoalsModule } from './goals/goals.module';
 import { WealthModule } from './wealth/wealth.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { WealthModule } from './wealth/wealth.module';
       }),
     }),
     AuthModule,
+    GoalsModule,
     WealthModule,
   ],
   controllers: [AppController],
