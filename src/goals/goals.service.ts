@@ -12,6 +12,19 @@ import { UpdateGoalDto } from './dto/update-goal.dto';
 import { UpdateMilestoneDto } from './dto/update-milestone.dto';
 import { GoalMilestone } from './entities/goal-milestone.entity';
 import { Goal } from './entities/goal.entity';
+import { TasksService } from '../tasks/tasks.service';
+
+type GoalLinkedTaskCounts = {
+  total: number;
+  completed: number;
+  pending: number;
+};
+
+const EMPTY_LINKED_TASKS: GoalLinkedTaskCounts = {
+  total: 0,
+  completed: 0,
+  pending: 0,
+};
 
 type ResolvedFilter =
   | { mode: 'month'; year: number; month: number }
@@ -24,17 +37,32 @@ export class GoalsService {
     private readonly goalRepository: Repository<Goal>,
     @InjectRepository(GoalMilestone)
     private readonly milestoneRepository: Repository<GoalMilestone>,
+    private readonly tasksService: TasksService,
   ) {}
 
   async getDashboard(userId: string, filterDto: GoalsFilterDto) {
     const filter = this.resolveFilter(filterDto);
     const goals = await this.listFilteredGoals(userId, filter);
+    const linkedTaskCounts = await this.tasksService.getLinkedTaskCounts(
+      userId,
+      goals.map((goal) => goal.id),
+    );
 
     return {
       filter,
       summary: this.buildSummary(goals),
-      goals: goals.map((goal) => this.serializeGoal(goal)),
+      goals: goals.map((goal) =>
+        this.serializeGoal(
+          goal,
+          linkedTaskCounts.get(goal.id) ?? EMPTY_LINKED_TASKS,
+        ),
+      ),
     };
+  }
+
+  async getGoal(userId: string, goalId: string) {
+    const goal = await this.findOwnedGoal(userId, goalId);
+    return this.serializeGoalWithLinkedTasks(userId, goal);
   }
 
   async createGoal(userId: string, dto: CreateGoalDto) {
@@ -76,7 +104,7 @@ export class GoalsService {
 
     const saved = await this.goalRepository.save(goal);
     const withMilestones = await this.findOwnedGoal(userId, saved.id);
-    return this.serializeGoal(withMilestones);
+    return this.serializeGoal(withMilestones, EMPTY_LINKED_TASKS);
   }
 
   async updateGoal(userId: string, goalId: string, dto: UpdateGoalDto) {
@@ -118,7 +146,7 @@ export class GoalsService {
     });
 
     const updated = await this.findOwnedGoal(userId, goalId);
-    return this.serializeGoal(updated);
+    return this.serializeGoalWithLinkedTasks(userId, updated);
   }
 
   async deleteGoal(userId: string, goalId: string) {
@@ -151,7 +179,7 @@ export class GoalsService {
     await this.goalRepository.update(goalId, { progress });
     updated.progress = progress;
 
-    return this.serializeGoal(updated);
+    return this.serializeGoalWithLinkedTasks(userId, updated);
   }
 
   async createMilestone(
@@ -172,7 +200,7 @@ export class GoalsService {
     await this.goalRepository.save(goal);
 
     const updated = await this.findOwnedGoal(userId, goalId);
-    return this.serializeGoal(updated);
+    return this.serializeGoalWithLinkedTasks(userId, updated);
   }
 
   async deleteMilestone(userId: string, goalId: string, milestoneId: string) {
@@ -191,7 +219,7 @@ export class GoalsService {
 
     const updated = await this.findOwnedGoal(userId, goalId);
     updated.progress = progress;
-    return this.serializeGoal(updated);
+    return this.serializeGoalWithLinkedTasks(userId, updated);
   }
 
   private resolveFilter(filterDto: GoalsFilterDto): ResolvedFilter {
@@ -300,7 +328,16 @@ export class GoalsService {
     return goal;
   }
 
-  private serializeGoal(goal: Goal) {
+  private async serializeGoalWithLinkedTasks(userId: string, goal: Goal) {
+    const linkedTaskCounts = await this.tasksService.getLinkedTaskCounts(
+      userId,
+      [goal.id],
+    );
+
+    return this.serializeGoal(goal, linkedTaskCounts.get(goal.id) ?? EMPTY_LINKED_TASKS);
+  }
+
+  private serializeGoal(goal: Goal, linkedTasks: GoalLinkedTaskCounts = EMPTY_LINKED_TASKS) {
     const milestones = [...(goal.milestones ?? [])].sort(
       (a, b) => a.sort_order - b.sort_order,
     );
@@ -316,7 +353,7 @@ export class GoalsService {
       target_date: goal.target_date,
       progress: goal.progress,
       streak: goal.streak,
-      linked_tasks: goal.linked_tasks,
+      linked_tasks: linkedTasks,
       milestones: milestones.map((milestone) => ({
         id: milestone.id,
         title: milestone.title,

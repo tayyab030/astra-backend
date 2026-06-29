@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { GoalsModule } from './goals/goals.module';
+import { TasksModule } from './tasks/tasks.module';
 import { WealthModule } from './wealth/wealth.module';
 
 @Module({
@@ -39,6 +40,7 @@ import { WealthModule } from './wealth/wealth.module';
     }),
     AuthModule,
     GoalsModule,
+    TasksModule,
     WealthModule,
   ],
   controllers: [AppController],

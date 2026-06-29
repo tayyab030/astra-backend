@@ -33,6 +33,11 @@ export class GoalsController {
     return this.goalsService.createGoal(req.user!.sub, dto);
   }
 
+  @Get([':id', ':id/'])
+  getGoal(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.goalsService.getGoal(req.user!.sub, id);
+  }
+
   @Patch([':id', ':id/'])
   updateGoal(
     @Req() req: AuthenticatedRequest,
