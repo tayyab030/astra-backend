@@ -16,4 +16,8 @@ export class TasksFilterDto {
   @ValidateIf((_, value) => value !== 'none')
   @IsUUID('4', { message: 'Invalid goal id' })
   goal_id?: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'Invalid project id' })
+  project_id?: string;
 }

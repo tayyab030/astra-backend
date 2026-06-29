@@ -35,7 +35,10 @@ export class TasksService {
     });
 
     const scoped = this.applyGoalFilter(
-      this.applyPeriodFilter(tasks, filterDto.period),
+      this.applyProjectFilter(
+        this.applyPeriodFilter(tasks, filterDto.period),
+        filterDto.project_id,
+      ),
       filterDto.goal_id,
     );
     const filtered = this.applyTaskFilter(scoped, statusFilter);
@@ -317,6 +320,11 @@ export class TasksService {
       return tasks.filter((task) => task.goal_id === null);
     }
     return tasks.filter((task) => task.goal_id === goalId);
+  }
+
+  private applyProjectFilter(tasks: Task[], projectId?: string) {
+    if (!projectId) return tasks;
+    return tasks.filter((task) => task.project_id === projectId);
   }
 
   private getPeriodBounds(period: 'week' | 'month' | 'year') {
