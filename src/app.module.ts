@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { GoalsModule } from './goals/goals.module';
 import { TasksModule } from './tasks/tasks.module';
+import { HealthModule } from './health/health.module';
 import { TimeTrackModule } from './time-track/time-track.module';
 import { WealthModule } from './wealth/wealth.module';
 
@@ -44,6 +45,7 @@ import { WealthModule } from './wealth/wealth.module';
     TasksModule,
     WealthModule,
     TimeTrackModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
