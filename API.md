@@ -44,7 +44,7 @@ Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
 **200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name } }`
 
-**401:** `{ "non_field_errors": ["Unable to log in with provided credentials."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
+**401:** `{ "non_field_errors": ["Incorrect username/email or password. Please try again."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
 
 ## `POST /auth/jwt/refresh/`
 

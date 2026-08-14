@@ -89,14 +89,18 @@ export class AuthService {
     const user = await this.findUserByLogin(login);
     if (!user) {
       throw new UnauthorizedException({
-        non_field_errors: ['Unable to log in with provided credentials.'],
+        non_field_errors: [
+          'Incorrect username/email or password. Please try again.',
+        ],
       });
     }
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
       throw new UnauthorizedException({
-        non_field_errors: ['Unable to log in with provided credentials.'],
+        non_field_errors: [
+          'Incorrect username/email or password. Please try again.',
+        ],
       });
     }
 
@@ -300,14 +304,18 @@ export class AuthService {
     const user = await this.findUserByLogin(dto.login);
     if (!user) {
       throw new UnauthorizedException({
-        non_field_errors: ['Unable to log in with provided credentials.'],
+        non_field_errors: [
+          'Incorrect username/email or password. Please try again.',
+        ],
       });
     }
 
     const ok = await bcrypt.compare(dto.password, user.password);
     if (!ok) {
       throw new UnauthorizedException({
-        non_field_errors: ['Unable to log in with provided credentials.'],
+        non_field_errors: [
+          'Incorrect username/email or password. Please try again.',
+        ],
       });
     }
 
