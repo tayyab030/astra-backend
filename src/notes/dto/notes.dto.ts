@@ -101,6 +101,7 @@ export class CreateNoteDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(200_000)
   content?: string;
 
   @IsIn(NOTE_TYPES, { message: 'Invalid note type' })
@@ -159,6 +160,7 @@ export class UpdateNoteDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(200_000)
   content?: string;
 
   @IsOptional()

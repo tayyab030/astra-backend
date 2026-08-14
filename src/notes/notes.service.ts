@@ -13,6 +13,7 @@ import {
   UpdateNoteDto,
 } from './dto/notes.dto';
 import { Note } from './entities/note.entity';
+import { sanitizeNoteContent } from './utils/sanitize-note-content';
 
 const PRIORITY_ORDER: Record<string, number> = {
   urgent: 0,
@@ -84,7 +85,7 @@ export class NotesService {
     const note = this.noteRepository.create({
       user_id: userId,
       title: dto.title.trim(),
-      content: dto.content ?? '',
+      content: sanitizeNoteContent(dto.content),
       note_type: dto.note_type,
       category: dto.category ?? 'Personal',
       tags: dto.tags ?? [],
@@ -136,7 +137,7 @@ export class NotesService {
     }
 
     if (dto.title !== undefined) note.title = dto.title.trim();
-    if (dto.content !== undefined) note.content = dto.content;
+    if (dto.content !== undefined) note.content = sanitizeNoteContent(dto.content);
     if (dto.note_type !== undefined) note.note_type = dto.note_type;
     if (dto.category !== undefined) note.category = dto.category;
     if (dto.tags !== undefined) note.tags = dto.tags;
