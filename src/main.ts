@@ -6,21 +6,62 @@ import { createValidationPipe } from './validation.pipe';
 
 dns.setDefaultResultOrder('ipv4first');
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api');
-  app.use(cookieParser());
+function isPrivateLanHost(hostname: string) {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '10.0.2.2' ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
+}
 
-  const corsOrigins = process.env.CORS_ORIGINS?.split(',')
-    .map((origin) => origin.trim())
+function isAllowedOrigin(origin?: string) {
+  if (!origin) {
+    return true;
+  }
+
+  const configured = process.env.CORS_ORIGINS?.split(',')
+    .map((value) => value.trim())
     .filter(Boolean);
   const fallbackOrigin =
     process.env.FRONTEND_URL ??
     process.env.FRONTEND_LOGIN_URL?.replace(/\/login\/?$/, '') ??
     'http://localhost:3000';
+  const allowed = configured?.length ? configured : [fallbackOrigin];
+
+  if (allowed.includes('*') || allowed.includes(origin)) {
+    return true;
+  }
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    return (
+      (protocol === 'http:' || protocol === 'https:') &&
+      isPrivateLanHost(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.setGlobalPrefix('api');
+  app.use(cookieParser());
+
   app.enableCors({
-    origin: corsOrigins?.length ? corsOrigins : fallbackOrigin,
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'authorization'],
   });
 
   app.useGlobalPipes(createValidationPipe());

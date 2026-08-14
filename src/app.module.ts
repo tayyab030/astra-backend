@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { GoalsModule } from './goals/goals.module';
 import { TasksModule } from './tasks/tasks.module';
 import { HealthModule } from './health/health.module';
+import { NotesModule } from './notes/notes.module';
 import { TimeTrackModule } from './time-track/time-track.module';
 import { WealthModule } from './wealth/wealth.module';
 
@@ -46,6 +47,7 @@ import { WealthModule } from './wealth/wealth.module';
     WealthModule,
     TimeTrackModule,
     HealthModule,
+    NotesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
