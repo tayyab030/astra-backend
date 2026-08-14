@@ -6,7 +6,9 @@ Aligned with the `astra-frontend` `tayyab-dev` branch. Use `Content-Type: applic
 
 ## `POST /auth/users/`
 
-Register. Body: `first_name`, `last_name`, `username`, `email`, `password`, `confirmPassword`, `terms` (must be `true`).
+Register. Body: `first_name`, `last_name`, `username`, `email`, `country` (ISO country code, e.g. `PK`, `US`), `password`, `confirmPassword`, `terms` (must be `true`).
+
+Default `currency` and `timezone` are set automatically from the selected country (e.g. `PK` → `PKR` + `Asia/Karachi`).
 
 **200:** `{ "message": "Registration successful", "otp_token": "<uuid>" }`
 
@@ -42,9 +44,35 @@ If the current code is still valid, returns the existing token without sending a
 
 Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
-**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name } }`
+**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name, currency, country, timezone } }`
 
 **401:** `{ "non_field_errors": ["Incorrect username/email or password. Please try again."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
+
+## `GET /auth/me/`
+
+Requires auth. Returns the current user profile.
+
+**200:** `{ "id", "username", "email", "first_name", "last_name", "currency", "country", "timezone" }`
+
+## `PATCH /auth/me/`
+
+Requires auth. Update profile fields. Body (all optional):
+
+```json
+{
+  "first_name": "Tayyab",
+  "last_name": "Ahmad",
+  "currency": "PKR",
+  "timezone": "Asia/Karachi"
+}
+```
+
+`currency` must be a 3-letter ISO code (e.g. `USD`, `EUR`, `PKR`).
+`timezone` must be an IANA timezone (e.g. `Asia/Karachi`, `America/New_York`).
+
+**200:** updated user object (same shape as `GET /auth/me/`).
+
+**404:** `{ "detail": "User not found." }`
 
 ## `POST /auth/jwt/refresh/`
 
@@ -123,6 +151,13 @@ Filtered dashboard. Defaults to the current month when query params are omitted.
   ],
   "category_totals": [
     { "value": "food", "label": "Food & Dining", "total": 85.5 }
+  ],
+  "income_category_totals": [
+    { "value": "salary", "label": "Salary", "total": 2600 },
+    { "value": "freelancing", "label": "Freelancing", "total": 0 },
+    { "value": "bonus", "label": "Bonus", "total": 0 },
+    { "value": "gift", "label": "Gift", "total": 0 },
+    { "value": "income_other", "label": "Other", "total": 0 }
   ]
 }
 ```
@@ -139,9 +174,11 @@ Create a transaction. Body:
 }
 ```
 
-`amount` is always positive in the request. The backend signs it: positive for `income`, negative for all other categories.
+`amount` is always positive in the request. The backend signs it: positive for income categories, negative for expense categories.
 
-**Categories:** `food`, `transport`, `housing`, `shopping`, `entertainment`, `waste`, `other`, `income`
+**Expense categories:** `food`, `transport`, `housing`, `shopping`, `entertainment`, `waste`, `other`
+
+**Income categories:** `salary`, `freelancing`, `bonus`, `gift`, `income_other` (legacy `income` still accepted)
 
 **200:** serialized transaction object (same shape as items in `transactions` above).
 

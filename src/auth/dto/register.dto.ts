@@ -2,11 +2,13 @@
 import {
   IsBoolean,
   IsEmail,
+  IsIn,
   IsString,
   Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { COUNTRY_CODES } from '../constants/country-currency';
 
 const PASSWORD_REGEX = {
   uppercase: /[A-Z]/,
@@ -14,7 +16,7 @@ const PASSWORD_REGEX = {
   number: /\d/,
   special: /[!@#$%^&*(),.?":{}|<>]/,
 };
-const USERNAME_REGEX = /^[a-zA-Z0-9@.+_-]+$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9._+-]+$/;
 const EMAIL_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 
 export class RegisterDto {
@@ -31,13 +33,17 @@ export class RegisterDto {
   @MaxLength(20, { message: 'Username must be no more than 20 characters' })
   @Matches(USERNAME_REGEX, {
     message:
-      'Username can only contain letters, numbers, and @ . + - _ characters',
+      'Username can only contain letters, numbers, and . + - _ characters',
   })
   username: string;
 
   @IsEmail({}, { message: 'Invalid email address' })
   @Matches(EMAIL_REGEX, { message: 'Invalid email address' })
   email: string;
+
+  @IsString()
+  @IsIn(COUNTRY_CODES, { message: 'Please select a valid country' })
+  country: string;
 
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })

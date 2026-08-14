@@ -20,6 +20,8 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { ResendOtpLoginDto } from './dto/resend-otp-login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { getCurrencyForCountry, getTimezoneForCountry } from './constants/country-currency';
 import { sendOtpEmail, sendPasswordResetEmail } from './email';
 import { User } from './entities/user.entity';
 
@@ -28,6 +30,7 @@ const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
 const ACCESS_TOKEN_TTL = '60m';
 const REFRESH_TOKEN_TTL = '7d';
+const EMAIL_LIKE_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 
 @Injectable()
 export class AuthService {
@@ -54,7 +57,41 @@ export class AuthService {
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name,
+      currency: user.currency || 'USD',
+      country: user.country,
+      timezone: user.timezone || 'UTC',
     };
+  }
+
+  async getMe(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException({ detail: 'User not found.' });
+    }
+    return this.serializeUser(user);
+  }
+
+  async updateMe(userId: string, dto: UpdateProfileDto) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException({ detail: 'User not found.' });
+    }
+
+    if (dto.first_name !== undefined) {
+      user.first_name = dto.first_name.trim();
+    }
+    if (dto.last_name !== undefined) {
+      user.last_name = dto.last_name.trim();
+    }
+    if (dto.currency !== undefined) {
+      user.currency = dto.currency.toUpperCase();
+    }
+    if (dto.timezone !== undefined) {
+      user.timezone = dto.timezone;
+    }
+
+    const saved = await this.userRepository.save(user);
+    return this.serializeUser(saved);
   }
 
   private signAccessToken(user: User) {
@@ -149,6 +186,18 @@ export class AuthService {
     const email = dto.email.trim().toLowerCase();
     const username = dto.username.trim();
 
+    if (EMAIL_LIKE_REGEX.test(username) || username.includes('@')) {
+      throw new BadRequestException({
+        username: ['Username cannot be an email address.'],
+      });
+    }
+
+    if (username.toLowerCase() === email) {
+      throw new BadRequestException({
+        username: ['Username and email cannot be the same.'],
+      });
+    }
+
     const existingByUsername = await this.userRepository.findOne({
       where: { username },
     });
@@ -168,12 +217,19 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const country = dto.country.trim().toUpperCase();
+    const currency = getCurrencyForCountry(country);
+    const timezone = getTimezoneForCountry(country);
+
     const user = this.userRepository.create({
       first_name: dto.first_name.trim(),
       last_name: dto.last_name.trim(),
       username,
       email,
       password: hashedPassword,
+      country,
+      currency,
+      timezone,
     });
     const saved = await this.userRepository.save(user);
     const withOtp = await this.issueOtp(saved);

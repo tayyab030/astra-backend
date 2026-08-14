@@ -8,47 +8,56 @@ import {
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column()
-  first_name: string;
+  first_name!: string;
 
   @Column()
-  last_name: string;
+  last_name!: string;
 
   @Column({ unique: true })
-  username: string;
+  username!: string;
 
   @Column({ unique: true })
-  email: string;
+  email!: string;
 
   @Column()
-  password: string;
+  password!: string;
+
+  @Column({ type: 'varchar', length: 3, default: 'USD' })
+  currency!: string;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  country!: string | null;
+
+  @Column({ type: 'varchar', length: 64, default: 'UTC' })
+  timezone!: string;
 
   @Column({ type: 'boolean', default: false })
-  is_verified: boolean;
+  is_verified!: boolean;
 
   @Column({ type: 'timestamp', nullable: true })
-  verified_at: Date | null;
+  verified_at!: Date | null;
 
   @Column({ type: 'varchar', length: 6, nullable: true })
-  otp_code: string | null;
+  otp_code!: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  otp_expires_at: Date | null;
+  otp_expires_at!: Date | null;
 
   @Column({ type: 'varchar', length: 36, nullable: true })
-  otp_token: string | null;
+  otp_token!: string | null;
 
   @Column({ type: 'int', default: 0 })
-  otp_attempts: number;
+  otp_attempts!: number;
 
   @Column({ type: 'varchar', length: 36, nullable: true })
-  password_reset_token: string | null;
+  password_reset_token!: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  password_reset_expires_at: Date | null;
+  password_reset_expires_at!: Date | null;
 
   @CreateDateColumn()
-  created_at: Date;
+  created_at!: Date;
 }
