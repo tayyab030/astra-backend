@@ -9,6 +9,9 @@ import {
 } from 'class-validator';
 import { TIMEZONE_VALUES } from '../constants/country-currency';
 
+export const USER_THEMES = ['light', 'dark', 'neon'] as const;
+export type UserTheme = (typeof USER_THEMES)[number];
+
 export class UpdateProfileDto {
   @IsOptional()
   @IsString()
@@ -33,4 +36,11 @@ export class UpdateProfileDto {
   @IsString()
   @IsIn(TIMEZONE_VALUES, { message: 'Please select a valid timezone' })
   timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(USER_THEMES, {
+    message: 'Theme must be one of: light, dark, neon',
+  })
+  theme?: string;
 }

@@ -60,6 +60,7 @@ export class AuthService {
       currency: user.currency || 'USD',
       country: user.country,
       timezone: user.timezone || 'UTC',
+      theme: user.theme || 'neon',
     };
   }
 
@@ -88,6 +89,9 @@ export class AuthService {
     }
     if (dto.timezone !== undefined) {
       user.timezone = dto.timezone;
+    }
+    if (dto.theme !== undefined) {
+      user.theme = dto.theme;
     }
 
     const saved = await this.userRepository.save(user);
@@ -230,6 +234,7 @@ export class AuthService {
       country,
       currency,
       timezone,
+      theme: 'neon',
     });
     const saved = await this.userRepository.save(user);
     const withOtp = await this.issueOtp(saved);

@@ -34,6 +34,9 @@ export class User {
   @Column({ type: 'varchar', length: 64, default: 'UTC' })
   timezone!: string;
 
+  @Column({ type: 'varchar', length: 16, default: 'neon' })
+  theme!: string;
+
   @Column({ type: 'boolean', default: false })
   is_verified!: boolean;
 

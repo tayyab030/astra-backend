@@ -8,7 +8,7 @@ Aligned with the `astra-frontend` `tayyab-dev` branch. Use `Content-Type: applic
 
 Register. Body: `first_name`, `last_name`, `username`, `email`, `country` (ISO country code, e.g. `PK`, `US`), `password`, `confirmPassword`, `terms` (must be `true`).
 
-Default `currency` and `timezone` are set automatically from the selected country (e.g. `PK` → `PKR` + `Asia/Karachi`).
+Default `currency` and `timezone` are set automatically from the selected country (e.g. `PK` → `PKR` + `Asia/Karachi`). Default `theme` is `neon`.
 
 **200:** `{ "message": "Registration successful", "otp_token": "<uuid>" }`
 
@@ -44,7 +44,7 @@ If the current code is still valid, returns the existing token without sending a
 
 Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
-**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name, currency, country, timezone } }`
+**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name, currency, country, timezone, theme } }`
 
 **401:** `{ "non_field_errors": ["Incorrect username/email or password. Please try again."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
 
@@ -52,7 +52,7 @@ Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
 Requires auth. Returns the current user profile.
 
-**200:** `{ "id", "username", "email", "first_name", "last_name", "currency", "country", "timezone" }`
+**200:** `{ "id", "username", "email", "first_name", "last_name", "currency", "country", "timezone", "theme" }`
 
 ## `PATCH /auth/me/`
 
@@ -63,12 +63,14 @@ Requires auth. Update profile fields. Body (all optional):
   "first_name": "Tayyab",
   "last_name": "Ahmad",
   "currency": "PKR",
-  "timezone": "Asia/Karachi"
+  "timezone": "Asia/Karachi",
+  "theme": "neon"
 }
 ```
 
 `currency` must be a 3-letter ISO code (e.g. `USD`, `EUR`, `PKR`).
 `timezone` must be an IANA timezone (e.g. `Asia/Karachi`, `America/New_York`).
+`theme` must be one of: `light`, `dark`, `neon` (default on signup: `neon`).
 
 **200:** updated user object (same shape as `GET /auth/me/`).
 
