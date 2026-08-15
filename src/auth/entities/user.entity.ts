@@ -60,6 +60,10 @@ export class User {
   @Column({ type: 'varchar', length: 32, default: 'all' })
   ai_data_scope!: string;
 
+  /** ISO-639-1 language for chat, STT, and TTS preference (default en). */
+  @Column({ type: 'varchar', length: 16, default: 'en' })
+  ai_language!: string;
+
   @Column({ type: 'boolean', default: false })
   is_verified!: boolean;
 

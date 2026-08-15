@@ -27,6 +27,7 @@ const FIELD_LABELS: Record<string, string> = {
   ai_personality: 'AI personality',
   ai_insights: 'AI smart insights',
   ai_data_scope: 'AI data analysis scope',
+  ai_language: 'AI language',
   is_verified: 'Email verified',
   created_at: 'Account created at',
 };

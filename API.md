@@ -8,7 +8,7 @@ Aligned with the `astra-frontend` `tayyab-dev` branch. Use `Content-Type: applic
 
 Register. Body: `first_name`, `last_name`, `username`, `email`, `gender` (`male` | `female` | `other` | `prefer_not_to_say`), `country` (ISO country code, e.g. `PK`, `US`), `password`, `confirmPassword`, `terms` (must be `true`).
 
-Default `currency` and `timezone` are set automatically from the selected country (e.g. `PK` → `PKR` + `Asia/Karachi`). Default `theme` is `neon`. AI defaults: `ai_voice`=`austin`, `ai_voice_mode`=`false`, `ai_personality`=`professional`, `ai_insights`=`true`, `ai_data_scope`=`all`.
+Default `currency` and `timezone` are set automatically from the selected country (e.g. `PK` → `PKR` + `Asia/Karachi`). Default `theme` is `neon`. AI defaults: `ai_voice`=`austin`, `ai_voice_mode`=`false`, `ai_personality`=`professional`, `ai_insights`=`true`, `ai_data_scope`=`all`, `ai_language`=`en`.
 
 **200:** `{ "message": "Registration successful", "otp_token": "<uuid>" }`
 
@@ -44,7 +44,7 @@ If the current code is still valid, returns the existing token without sending a
 
 Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
-**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name, gender, currency, country, timezone, theme, ai_voice, ai_voice_mode, ai_personality, ai_insights, ai_data_scope } }`
+**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name, gender, currency, country, timezone, theme, ai_voice, ai_voice_mode, ai_personality, ai_insights, ai_data_scope, ai_language } }`
 
 **401:** `{ "non_field_errors": ["Incorrect username/email or password. Please try again."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
 
@@ -52,7 +52,7 @@ Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
 Requires auth. Returns the current user profile.
 
-**200:** `{ "id", "username", "email", "first_name", "last_name", "gender", "currency", "country", "timezone", "theme", "ai_voice", "ai_voice_mode", "ai_personality", "ai_insights", "ai_data_scope" }`
+**200:** `{ "id", "username", "email", "first_name", "last_name", "gender", "currency", "country", "timezone", "theme", "ai_voice", "ai_voice_mode", "ai_personality", "ai_insights", "ai_data_scope", "ai_language" }`
 
 ## `PATCH /auth/me/`
 
@@ -70,7 +70,8 @@ Requires auth. Update profile fields. Body (all optional):
   "ai_voice_mode": false,
   "ai_personality": "professional",
   "ai_insights": true,
-  "ai_data_scope": "all"
+  "ai_data_scope": "all",
+  "ai_language": "en"
 }
 ```
 
@@ -78,11 +79,12 @@ Requires auth. Update profile fields. Body (all optional):
 `currency` must be a 3-letter ISO code (e.g. `USD`, `EUR`, `PKR`).
 `timezone` must be an IANA timezone (e.g. `Asia/Karachi`, `America/New_York`).
 `theme` must be one of: `light`, `dark`, `neon` (default on signup: `neon`).
-`ai_voice` must be one of: `austin`, `daniel`, `troy`, `autumn`, `diana`, `hannah` (default: `austin`). Used by `POST /assistant/speech/`.
+`ai_voice` must be one of English Orpheus voices (`austin`, `daniel`, `troy`, `autumn`, `diana`, `hannah`) or Arabic Orpheus voices (`abdullah`, `fahad`, `sultan`, `lulwa`, `noura`, `aisha`) (default: `austin`). Used by `POST /assistant/speech/`.
 `ai_voice_mode` boolean (default `false`) — client prefers speaking assistant replies.
 `ai_personality` one of: `professional`, `casual`, `motivational` (default `professional`).
 `ai_insights` boolean (default `true`) — allow unsolicited smart suggestions.
 `ai_data_scope` one of: `tasks`, `productivity`, `all` (default `all`). Controls what live context Groq receives (`all` includes wealth).
+`ai_language` ISO-639-1 code from Groq Whisper language list (default `en`). Used for chat reply language, STT, and TTS model selection (`en` / `ar` use native Orpheus; other languages still type+listen, speech falls back to English TTS).
 
 **200:** updated user object (same shape as `GET /auth/me/`).
 

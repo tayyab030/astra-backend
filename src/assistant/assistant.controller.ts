@@ -101,7 +101,7 @@ export class AssistantController {
     if (!file?.buffer?.length) {
       throw new BadRequestException('Multipart field "file" is required.');
     }
-    const text = await this.assistantService.transcribe({
+    const text = await this.assistantService.transcribe(req.user.sub, {
       buffer: file.buffer,
       fileName: file.originalname,
       mimeType: file.mimetype,
@@ -122,7 +122,9 @@ export class AssistantController {
     const dataUrl = raw.startsWith('data:')
       ? raw
       : `data:${dto.mime_type || 'audio/m4a'};base64,${raw}`;
-    const text = await this.assistantService.transcribe({ dataUrl });
+    const text = await this.assistantService.transcribe(req.user.sub, {
+      dataUrl,
+    });
     return { text };
   }
 }

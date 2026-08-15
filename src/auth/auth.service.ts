@@ -30,6 +30,10 @@ import {
   isAiDataScope,
   isAiPersonality,
 } from './constants/ai-settings';
+import {
+  DEFAULT_AI_LANGUAGE,
+  isAiLanguage,
+} from './constants/ai-language';
 import { getCurrencyForCountry, getTimezoneForCountry } from './constants/country-currency';
 import { sendOtpEmail, sendPasswordResetEmail } from './email';
 import { User } from './entities/user.entity';
@@ -91,6 +95,9 @@ export class AuthService {
       ai_data_scope: isAiDataScope(user.ai_data_scope)
         ? user.ai_data_scope
         : DEFAULT_AI_DATA_SCOPE,
+      ai_language: isAiLanguage(user.ai_language)
+        ? user.ai_language
+        : DEFAULT_AI_LANGUAGE,
       is_verified: user.is_verified,
       created_at: user.created_at?.toISOString?.() ?? user.created_at,
     };
@@ -142,6 +149,9 @@ export class AuthService {
     }
     if (dto.ai_data_scope !== undefined) {
       user.ai_data_scope = dto.ai_data_scope;
+    }
+    if (dto.ai_language !== undefined) {
+      user.ai_language = dto.ai_language;
     }
 
     const saved = await this.userRepository.save(user);
@@ -291,6 +301,7 @@ export class AuthService {
       ai_personality: DEFAULT_AI_PERSONALITY,
       ai_insights: DEFAULT_AI_INSIGHTS,
       ai_data_scope: DEFAULT_AI_DATA_SCOPE,
+      ai_language: DEFAULT_AI_LANGUAGE,
     });
     const saved = await this.userRepository.save(user);
     const withOtp = await this.issueOtp(saved);

@@ -100,15 +100,25 @@ export class AssistantService {
   async createSpeech(userId: string, text: string) {
     const user = await this.authService.getMe(userId);
     const voice = isAiVoice(user.ai_voice) ? user.ai_voice : DEFAULT_AI_VOICE;
-    return this.groqSpeech.createWav(text, voice);
+    return this.groqSpeech.createWav(text, {
+      voice,
+      language: user.ai_language,
+    });
   }
 
-  transcribe(options: {
-    buffer?: Buffer;
-    fileName?: string;
-    mimeType?: string;
-    dataUrl?: string;
-  }) {
-    return this.groqTranscribe.transcribe(options);
+  async transcribe(
+    userId: string,
+    options: {
+      buffer?: Buffer;
+      fileName?: string;
+      mimeType?: string;
+      dataUrl?: string;
+    },
+  ) {
+    const user = await this.authService.getMe(userId);
+    return this.groqTranscribe.transcribe({
+      ...options,
+      language: user.ai_language,
+    });
   }
 }

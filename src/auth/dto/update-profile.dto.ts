@@ -14,6 +14,7 @@ import {
   AI_DATA_SCOPES,
   AI_PERSONALITIES,
 } from '../constants/ai-settings';
+import { AI_LANGUAGES } from '../constants/ai-language';
 import { USER_GENDERS } from '../constants/user-gender';
 
 export const USER_THEMES = ['light', 'dark', 'neon'] as const;
@@ -86,4 +87,11 @@ export class UpdateProfileDto {
     message: `AI data scope must be one of: ${AI_DATA_SCOPES.join(', ')}`,
   })
   ai_data_scope?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn([...AI_LANGUAGES], {
+    message: 'Please select a valid AI language',
+  })
+  ai_language?: string;
 }

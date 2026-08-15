@@ -4,6 +4,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  DEFAULT_AI_LANGUAGE,
+  isAiLanguage,
+  whisperLanguageCode,
+} from '../../auth/constants/ai-language';
+import {
   assertGroqApiKey,
   GROQ_TRANSCRIBE_URL,
   GROQ_WHISPER_MODEL,
@@ -16,6 +21,7 @@ export class GroqTranscribeService {
     fileName?: string;
     mimeType?: string;
     dataUrl?: string;
+    language?: string;
   }): Promise<string> {
     const apiKey = assertGroqApiKey();
     const formData = new FormData();
@@ -32,8 +38,12 @@ export class GroqTranscribeService {
       throw new BadRequestException('Audio payload is required.');
     }
 
+    const language = whisperLanguageCode(
+      isAiLanguage(options.language) ? options.language : DEFAULT_AI_LANGUAGE,
+    );
+
     formData.append('model', GROQ_WHISPER_MODEL);
-    formData.append('language', 'en');
+    formData.append('language', language);
     formData.append('response_format', 'json');
     formData.append('temperature', '0');
 

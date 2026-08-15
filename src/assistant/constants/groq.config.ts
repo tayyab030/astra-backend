@@ -8,6 +8,7 @@ export const GROQ_TRANSCRIBE_URL =
 export const GROQ_CHAT_MODEL = 'llama-3.3-70b-versatile';
 export const GROQ_WHISPER_MODEL = 'whisper-large-v3-turbo';
 export const GROQ_TTS_MODEL = 'canopylabs/orpheus-v1-english';
+export const GROQ_TTS_MODEL_ARABIC = 'canopylabs/orpheus-arabic-saudi';
 export const GROQ_TTS_VOICE = 'austin';
 export const GROQ_TTS_MAX_CHARS = 200;
 export const GROQ_TTS_DIRECTION = '[composed] [formally]';
