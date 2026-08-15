@@ -16,6 +16,9 @@ export class User {
   @Column()
   last_name!: string;
 
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  gender!: string | null;
+
   @Column({ unique: true })
   username!: string;
 

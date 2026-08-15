@@ -8,6 +8,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { TIMEZONE_VALUES } from '../constants/country-currency';
+import { USER_GENDERS } from '../constants/user-gender';
 
 export const USER_THEMES = ['light', 'dark', 'neon'] as const;
 export type UserTheme = (typeof USER_THEMES)[number];
@@ -24,6 +25,13 @@ export class UpdateProfileDto {
   @MinLength(1, { message: 'Last name is required' })
   @MaxLength(100)
   last_name?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn([...USER_GENDERS], {
+    message: 'Please select a valid gender',
+  })
+  gender?: string;
 
   @IsOptional()
   @IsString()

@@ -57,6 +57,7 @@ export class AuthService {
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name,
+      gender: user.gender,
       currency: user.currency || 'USD',
       country: user.country,
       timezone: user.timezone || 'UTC',
@@ -83,6 +84,9 @@ export class AuthService {
     }
     if (dto.last_name !== undefined) {
       user.last_name = dto.last_name.trim();
+    }
+    if (dto.gender !== undefined) {
+      user.gender = dto.gender;
     }
     if (dto.currency !== undefined) {
       user.currency = dto.currency.toUpperCase();
@@ -228,6 +232,7 @@ export class AuthService {
     const user = this.userRepository.create({
       first_name: dto.first_name.trim(),
       last_name: dto.last_name.trim(),
+      gender: dto.gender,
       username,
       email,
       password: hashedPassword,
