@@ -40,6 +40,26 @@ export class User {
   @Column({ type: 'varchar', length: 16, default: 'neon' })
   theme!: string;
 
+  /** Groq Orpheus TTS voice id (e.g. austin). */
+  @Column({ type: 'varchar', length: 32, default: 'austin' })
+  ai_voice!: string;
+
+  /** Prefer speaking assistant replies in the client. */
+  @Column({ type: 'boolean', default: false })
+  ai_voice_mode!: boolean;
+
+  /** professional | casual | motivational */
+  @Column({ type: 'varchar', length: 32, default: 'professional' })
+  ai_personality!: string;
+
+  /** Offer unsolicited smart insights when relevant. */
+  @Column({ type: 'boolean', default: true })
+  ai_insights!: boolean;
+
+  /** tasks | productivity | all */
+  @Column({ type: 'varchar', length: 32, default: 'all' })
+  ai_data_scope!: string;
+
   @Column({ type: 'boolean', default: false })
   is_verified!: boolean;
 

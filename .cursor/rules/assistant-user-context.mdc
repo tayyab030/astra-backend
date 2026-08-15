@@ -1,0 +1,17 @@
+---
+description: Keep Groq assistant context in sync with all signed-in user profile fields
+globs: src/auth/**/*.ts,src/assistant/**/*.ts
+alwaysApply: true
+---
+
+# Astra Groq user context
+
+Whenever you add or change **user profile / account info** in this project (User entity columns, register/login/`/auth/me` payloads, settings fields, etc.):
+
+1. Add the field to `AuthService.serializeUser` if it is safe for clients (never password, OTP, or password-reset secrets).
+2. Do **not** hardcode a closed field list in the assistant — `buildUserContextBlock` must keep receiving the full `serializeUser` / `getMe` object so Groq gets every public profile field automatically.
+3. Only extend `GROQ_USER_CONTEXT_BLOCKLIST` for new secret/sensitive columns that must never reach Groq.
+4. Optionally add a friendly label in `FIELD_LABELS` in `src/assistant/context/user-context.builder.ts`.
+5. Update `ASTRA_SYSTEM_PROMPT` only if the new field needs special behavioral rules (addressing, currency formatting, etc.).
+
+Goal: the logged-in user's complete public profile (including AI settings: `ai_voice`, `ai_voice_mode`, `ai_personality`, `ai_insights`, `ai_data_scope`) is always available to Groq for that session, and future user-info features inherit the same access path. Apply AI settings via `buildAiSettingsBlock` / context builders when changing assistant behavior.

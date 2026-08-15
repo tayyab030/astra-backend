@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuthService } from '../../auth/auth.service';
 import { WealthService } from '../../wealth/wealth.service';
+import {
+  buildAiSettingsBlock,
+  shouldIncludeWealthContext,
+} from './ai-settings-context.builder';
 import { buildUserContextBlock } from './user-context.builder';
 import { buildWealthContextBlock } from './wealth-context.builder';
 
@@ -15,21 +19,24 @@ export class AssistantContextService {
 
   async buildLiveContext(userId: string): Promise<string | null> {
     try {
-      const now = new Date();
-      const [user, dashboard] = await Promise.all([
-        this.authService.getMe(userId),
-        this.wealthService.getDashboard(userId, {
+      const user = await this.authService.getMe(userId);
+      const parts: string[] = [
+        buildUserContextBlock(user as Record<string, unknown>),
+        buildAiSettingsBlock(user),
+      ];
+
+      if (shouldIncludeWealthContext(user.ai_data_scope)) {
+        const now = new Date();
+        const dashboard = await this.wealthService.getDashboard(userId, {
           mode: 'month',
           year: now.getFullYear(),
           month: now.getMonth() + 1,
-        }),
-      ]);
+        });
+        const currency = (user.currency || 'USD').trim().toUpperCase() || 'USD';
+        parts.push(buildWealthContextBlock(dashboard, currency));
+      }
 
-      const currency = (user.currency || 'USD').trim().toUpperCase() || 'USD';
-      return [
-        buildUserContextBlock(user),
-        buildWealthContextBlock(dashboard, currency),
-      ].join('\n\n');
+      return parts.join('\n\n');
     } catch (error) {
       this.logger.warn(
         `Failed to build assistant context for ${userId}: ${

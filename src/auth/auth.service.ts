@@ -21,6 +21,15 @@ import { ResendOtpDto } from './dto/resend-otp.dto';
 import { ResendOtpLoginDto } from './dto/resend-otp-login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { DEFAULT_AI_VOICE, isAiVoice } from './constants/ai-voice';
+import {
+  DEFAULT_AI_DATA_SCOPE,
+  DEFAULT_AI_INSIGHTS,
+  DEFAULT_AI_PERSONALITY,
+  DEFAULT_AI_VOICE_MODE,
+  isAiDataScope,
+  isAiPersonality,
+} from './constants/ai-settings';
 import { getCurrencyForCountry, getTimezoneForCountry } from './constants/country-currency';
 import { sendOtpEmail, sendPasswordResetEmail } from './email';
 import { User } from './entities/user.entity';
@@ -50,6 +59,11 @@ export class AuthService {
     return secret;
   }
 
+  /**
+   * Public profile payload for clients and Astra/Groq context.
+   * When adding user-facing profile fields, include them here (never secrets:
+   * password, otp_*, password_reset_*). Groq receives every field from this object.
+   */
   private serializeUser(user: User) {
     return {
       id: user.id,
@@ -62,6 +76,23 @@ export class AuthService {
       country: user.country,
       timezone: user.timezone || 'UTC',
       theme: user.theme || 'neon',
+      ai_voice: isAiVoice(user.ai_voice) ? user.ai_voice : DEFAULT_AI_VOICE,
+      ai_voice_mode:
+        typeof user.ai_voice_mode === 'boolean'
+          ? user.ai_voice_mode
+          : DEFAULT_AI_VOICE_MODE,
+      ai_personality: isAiPersonality(user.ai_personality)
+        ? user.ai_personality
+        : DEFAULT_AI_PERSONALITY,
+      ai_insights:
+        typeof user.ai_insights === 'boolean'
+          ? user.ai_insights
+          : DEFAULT_AI_INSIGHTS,
+      ai_data_scope: isAiDataScope(user.ai_data_scope)
+        ? user.ai_data_scope
+        : DEFAULT_AI_DATA_SCOPE,
+      is_verified: user.is_verified,
+      created_at: user.created_at?.toISOString?.() ?? user.created_at,
     };
   }
 
@@ -96,6 +127,21 @@ export class AuthService {
     }
     if (dto.theme !== undefined) {
       user.theme = dto.theme;
+    }
+    if (dto.ai_voice !== undefined) {
+      user.ai_voice = dto.ai_voice;
+    }
+    if (dto.ai_voice_mode !== undefined) {
+      user.ai_voice_mode = dto.ai_voice_mode;
+    }
+    if (dto.ai_personality !== undefined) {
+      user.ai_personality = dto.ai_personality;
+    }
+    if (dto.ai_insights !== undefined) {
+      user.ai_insights = dto.ai_insights;
+    }
+    if (dto.ai_data_scope !== undefined) {
+      user.ai_data_scope = dto.ai_data_scope;
     }
 
     const saved = await this.userRepository.save(user);
@@ -240,6 +286,11 @@ export class AuthService {
       currency,
       timezone,
       theme: 'neon',
+      ai_voice: DEFAULT_AI_VOICE,
+      ai_voice_mode: DEFAULT_AI_VOICE_MODE,
+      ai_personality: DEFAULT_AI_PERSONALITY,
+      ai_insights: DEFAULT_AI_INSIGHTS,
+      ai_data_scope: DEFAULT_AI_DATA_SCOPE,
     });
     const saved = await this.userRepository.save(user);
     const withOtp = await this.issueOtp(saved);

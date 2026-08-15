@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { AuthService } from '../auth/auth.service';
+import { DEFAULT_AI_VOICE, isAiVoice } from '../auth/constants/ai-voice';
 import { AssistantContextService } from './context/assistant-context.service';
 import { ConversationService } from './conversation/conversation.service';
 import { GroqChatService } from './groq/groq-chat.service';
@@ -8,6 +10,7 @@ import { GroqTranscribeService } from './groq/groq-transcribe.service';
 @Injectable()
 export class AssistantService {
   constructor(
+    private readonly authService: AuthService,
     private readonly conversations: ConversationService,
     private readonly contextService: AssistantContextService,
     private readonly groqChat: GroqChatService,
@@ -94,8 +97,10 @@ export class AssistantService {
     };
   }
 
-  createSpeech(text: string) {
-    return this.groqSpeech.createWav(text);
+  async createSpeech(userId: string, text: string) {
+    const user = await this.authService.getMe(userId);
+    const voice = isAiVoice(user.ai_voice) ? user.ai_voice : DEFAULT_AI_VOICE;
+    return this.groqSpeech.createWav(text, voice);
   }
 
   transcribe(options: {

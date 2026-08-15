@@ -28,12 +28,14 @@ function withDirection(text: string): string {
 
 @Injectable()
 export class GroqSpeechService {
-  async createWav(text: string): Promise<Buffer> {
+  async createWav(text: string, voice?: string): Promise<Buffer> {
     const apiKey = assertGroqApiKey();
     const input = withDirection(text);
     if (!input) {
       throw new BadRequestException('Nothing to speak.');
     }
+
+    const resolvedVoice = voice?.trim() || GROQ_TTS_VOICE;
 
     let response: Response;
     try {
@@ -46,7 +48,7 @@ export class GroqSpeechService {
         },
         body: JSON.stringify({
           model: GROQ_TTS_MODEL,
-          voice: GROQ_TTS_VOICE,
+          voice: resolvedVoice,
           input,
           response_format: 'wav',
         }),

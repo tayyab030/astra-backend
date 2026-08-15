@@ -82,7 +82,7 @@ export class AssistantController {
     if (!req.user?.sub) {
       throw new UnauthorizedException({ detail: 'Authentication required.' });
     }
-    const wav = await this.assistantService.createSpeech(dto.text);
+    const wav = await this.assistantService.createSpeech(req.user.sub, dto.text);
     res.setHeader('Content-Type', 'audio/wav');
     res.setHeader('Cache-Control', 'no-store');
     res.send(wav);
