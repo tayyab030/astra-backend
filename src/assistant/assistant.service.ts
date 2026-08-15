@@ -3,10 +3,12 @@ import { AuthService } from '../auth/auth.service';
 import { DEFAULT_AI_VOICE, isAiVoice } from '../auth/constants/ai-voice';
 import { AssistantContextService } from './context/assistant-context.service';
 import { ConversationService } from './conversation/conversation.service';
+import type { InsightKind } from './constants/insights-prompts';
 import { DailyQuoteService } from './daily-quote.service';
 import { GroqChatService } from './groq/groq-chat.service';
 import { GroqSpeechService } from './groq/groq-speech.service';
 import { GroqTranscribeService } from './groq/groq-transcribe.service';
+import { InsightsService } from './insights.service';
 
 @Injectable()
 export class AssistantService {
@@ -18,10 +20,25 @@ export class AssistantService {
     private readonly groqSpeech: GroqSpeechService,
     private readonly groqTranscribe: GroqTranscribeService,
     private readonly dailyQuote: DailyQuoteService,
+    private readonly insights: InsightsService,
   ) {}
 
   getDailyQuote() {
     return this.dailyQuote.getDailyQuote();
+  }
+
+  generateInsights(
+    userId: string,
+    kind: InsightKind,
+    context?: Record<string, unknown>,
+    period?: string | null,
+  ) {
+    return this.insights.generateInsights(
+      userId,
+      kind,
+      context ?? {},
+      period,
+    );
   }
 
   listConversations(userId: string) {

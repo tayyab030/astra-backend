@@ -20,6 +20,7 @@ import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import 'multer';
 import { AssistantService } from './assistant.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
+import { GenerateInsightsDto } from './dto/generate-insights.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { SpeechDto, TranscribeJsonDto } from './dto/speech.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
@@ -34,6 +35,22 @@ export class AssistantController {
       throw new UnauthorizedException({ detail: 'Authentication required.' });
     }
     return this.assistantService.getDailyQuote();
+  }
+
+  @Post(['insights', 'insights/'])
+  generateInsights(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: GenerateInsightsDto,
+  ) {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException({ detail: 'Authentication required.' });
+    }
+    return this.assistantService.generateInsights(
+      req.user.sub,
+      dto.kind,
+      dto.context,
+      dto.period,
+    );
   }
 
   @Get(['conversations', 'conversations/'])

@@ -12,6 +12,7 @@ import { AssistantMessage } from './entities/assistant-message.entity';
 import { GroqChatService } from './groq/groq-chat.service';
 import { GroqSpeechService } from './groq/groq-speech.service';
 import { GroqTranscribeService } from './groq/groq-transcribe.service';
+import { InsightsService } from './insights.service';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { GroqTranscribeService } from './groq/groq-transcribe.service';
     ConversationService,
     AssistantContextService,
     DailyQuoteService,
+    InsightsService,
     GroqChatService,
     GroqSpeechService,
     GroqTranscribeService,
