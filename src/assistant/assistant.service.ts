@@ -27,6 +27,10 @@ export class AssistantService {
     return this.dailyQuote.getDailyQuote();
   }
 
+  getGoalsQuote() {
+    return this.dailyQuote.getGoalsQuote();
+  }
+
   generateInsights(
     userId: string,
     kind: InsightKind,

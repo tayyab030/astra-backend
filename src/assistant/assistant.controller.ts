@@ -37,6 +37,14 @@ export class AssistantController {
     return this.assistantService.getDailyQuote();
   }
 
+  @Get(['goals-quote', 'goals-quote/'])
+  getGoalsQuote(@Req() req: AuthenticatedRequest) {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException({ detail: 'Authentication required.' });
+    }
+    return this.assistantService.getGoalsQuote();
+  }
+
   @Post(['insights', 'insights/'])
   generateInsights(
     @Req() req: AuthenticatedRequest,

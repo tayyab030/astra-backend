@@ -17,7 +17,16 @@ import {
 import { AI_LANGUAGES } from '../constants/ai-language';
 import { USER_GENDERS } from '../constants/user-gender';
 
-export const USER_THEMES = ['light', 'dark', 'neon'] as const;
+export const USER_THEMES = [
+  'light',
+  'mist',
+  'dark',
+  'neon',
+  'ocean',
+  'forest',
+  'ember',
+  'aurora',
+] as const;
 export type UserTheme = (typeof USER_THEMES)[number];
 
 export class UpdateProfileDto {
@@ -55,7 +64,7 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   @IsIn(USER_THEMES, {
-    message: 'Theme must be one of: light, dark, neon',
+    message: `Theme must be one of: ${USER_THEMES.join(', ')}`,
   })
   theme?: string;
 
