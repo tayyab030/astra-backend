@@ -8,47 +8,110 @@ import {
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column()
-  first_name: string;
+  first_name!: string;
 
   @Column()
-  last_name: string;
+  last_name!: string;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  gender!: string | null;
 
   @Column({ unique: true })
-  username: string;
+  username!: string;
 
   @Column({ unique: true })
-  email: string;
+  email!: string;
 
   @Column()
-  password: string;
+  password!: string;
+
+  @Column({ type: 'varchar', length: 3, default: 'USD' })
+  currency!: string;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  country!: string | null;
+
+  @Column({ type: 'varchar', length: 64, default: 'UTC' })
+  timezone!: string;
+
+  @Column({ type: 'varchar', length: 16, default: 'neon' })
+  theme!: string;
+
+  /** Groq Orpheus TTS voice id (e.g. austin). */
+  @Column({ type: 'varchar', length: 32, default: 'austin' })
+  ai_voice!: string;
+
+  /** Prefer speaking assistant replies in the client. */
+  @Column({ type: 'boolean', default: false })
+  ai_voice_mode!: boolean;
+
+  /** professional | casual | motivational */
+  @Column({ type: 'varchar', length: 32, default: 'professional' })
+  ai_personality!: string;
+
+  /** Offer unsolicited smart insights when relevant. */
+  @Column({ type: 'boolean', default: true })
+  ai_insights!: boolean;
+
+  /** tasks | productivity | all */
+  @Column({ type: 'varchar', length: 32, default: 'all' })
+  ai_data_scope!: string;
+
+  /** ISO-639-1 language for chat, STT, and TTS preference (default en). */
+  @Column({ type: 'varchar', length: 16, default: 'en' })
+  ai_language!: string;
+
+  /** Life Score weights + which app modules are enabled. */
+  @Column({ type: 'jsonb', nullable: true })
+  module_settings!: {
+    weights?: {
+      productivity?: number;
+      health?: number;
+      wealth?: number;
+      knowledge?: number;
+    };
+    enabled?: {
+      tasks?: boolean;
+      wealth?: boolean;
+      health?: boolean;
+      notes?: boolean;
+      analytics?: boolean;
+    };
+  } | null;
 
   @Column({ type: 'boolean', default: false })
-  is_verified: boolean;
+  is_verified!: boolean;
 
   @Column({ type: 'timestamp', nullable: true })
-  verified_at: Date | null;
+  verified_at!: Date | null;
 
   @Column({ type: 'varchar', length: 6, nullable: true })
-  otp_code: string | null;
+  otp_code!: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  otp_expires_at: Date | null;
+  otp_expires_at!: Date | null;
 
   @Column({ type: 'varchar', length: 36, nullable: true })
-  otp_token: string | null;
+  otp_token!: string | null;
 
   @Column({ type: 'int', default: 0 })
-  otp_attempts: number;
+  otp_attempts!: number;
 
   @Column({ type: 'varchar', length: 36, nullable: true })
-  password_reset_token: string | null;
+  password_reset_token!: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  password_reset_expires_at: Date | null;
+  password_reset_expires_at!: Date | null;
+
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  account_delete_token!: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  account_delete_expires_at!: Date | null;
 
   @CreateDateColumn()
-  created_at: Date;
+  created_at!: Date;
 }

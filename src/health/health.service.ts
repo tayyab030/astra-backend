@@ -4,79 +4,100 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, IsNull, Repository } from 'typeorm';
+import { Habit } from '../habits/entities/habit.entity';
+import { HabitsService } from '../habits/habits.service';
 import {
   AdjustMetricDto,
-  CreateHabitDto,
+  CreateSleepSessionDto,
   CreateWorkoutDto,
   HealthFilterDto,
   LogWeightDto,
   SaveMoodDto,
+  ToggleSleepDto,
   UpdateHealthProfileDto,
   UpdateHealthTargetsDto,
+  UpdateSleepSessionDto,
   UpdateTodayMetricsDto,
 } from './dto/health.dto';
 import { HealthDailyMetric } from './entities/health-daily-metric.entity';
-import { HealthHabit } from './entities/health-habit.entity';
 import { HealthMoodEntry } from './entities/health-mood-entry.entity';
 import { HealthSettings } from './entities/health-settings.entity';
+import { HealthSleepSession } from './entities/health-sleep-session.entity';
 import { HealthWeightEntry } from './entities/health-weight-entry.entity';
 import { HealthWorkout } from './entities/health-workout.entity';
 
 const METRIC_STEPS = {
   water: 1,
-  sleep: 0.5,
   exercise: 5,
 } as const;
 
 @Injectable()
 export class HealthService {
   constructor(
+    private readonly habitsService: HabitsService,
     @InjectRepository(HealthSettings)
     private readonly settingsRepository: Repository<HealthSettings>,
     @InjectRepository(HealthDailyMetric)
     private readonly dailyMetricRepository: Repository<HealthDailyMetric>,
     @InjectRepository(HealthWeightEntry)
     private readonly weightRepository: Repository<HealthWeightEntry>,
-    @InjectRepository(HealthHabit)
-    private readonly habitRepository: Repository<HealthHabit>,
     @InjectRepository(HealthWorkout)
     private readonly workoutRepository: Repository<HealthWorkout>,
     @InjectRepository(HealthMoodEntry)
     private readonly moodRepository: Repository<HealthMoodEntry>,
+    @InjectRepository(HealthSleepSession)
+    private readonly sleepSessionRepository: Repository<HealthSleepSession>,
   ) {}
 
   async getDashboard(userId: string, filter: HealthFilterDto) {
     const { start_date, end_date } = this.resolveDateRange(filter);
     const today = filter.today_date ?? this.formatDateLocal(new Date());
 
-    const [settings, todayMetric, dailyHistory, weightLog, habits, workouts, moodEntries, moodToday, latestWeightEntry] =
-      await Promise.all([
-        this.getOrCreateSettings(userId),
-        this.getOrCreateTodayMetric(userId, today),
-        this.dailyMetricRepository.find({
-          where: { user_id: userId, date: Between(start_date, end_date) },
-          order: { date: 'ASC' },
-        }),
-        this.weightRepository.find({
-          where: { user_id: userId, date: Between(start_date, end_date) },
-          order: { date: 'ASC' },
-        }),
-        this.getHabits(userId),
-        this.workoutRepository.find({
-          where: { user_id: userId, date: Between(start_date, end_date) },
-          order: { date: 'DESC', created_at: 'DESC' },
-        }),
-        this.moodRepository.find({
-          where: { user_id: userId, date: Between(start_date, end_date) },
-          order: { date: 'DESC' },
-        }),
-        this.moodRepository.findOne({ where: { user_id: userId, date: today } }),
-        this.weightRepository.findOne({
-          where: { user_id: userId },
-          order: { date: 'DESC' },
-        }),
-      ]);
+    const [
+      settings,
+      todayMetric,
+      dailyHistory,
+      weightLog,
+      habits,
+      workouts,
+      moodEntries,
+      moodToday,
+      latestWeightEntry,
+      sleepSessions,
+    ] = await Promise.all([
+      this.getOrCreateSettings(userId),
+      this.getOrCreateTodayMetric(userId, today),
+      this.dailyMetricRepository.find({
+        where: { user_id: userId, date: Between(start_date, end_date) },
+        order: { date: 'ASC' },
+      }),
+      this.weightRepository.find({
+        where: { user_id: userId, date: Between(start_date, end_date) },
+        order: { date: 'ASC' },
+      }),
+      this.habitsService.listForUser(userId),
+      this.workoutRepository.find({
+        where: { user_id: userId, date: Between(start_date, end_date) },
+        order: { date: 'DESC', created_at: 'DESC' },
+      }),
+      this.moodRepository.find({
+        where: { user_id: userId, date: Between(start_date, end_date) },
+        order: { date: 'DESC' },
+      }),
+      this.moodRepository.findOne({ where: { user_id: userId, date: today } }),
+      this.weightRepository.findOne({
+        where: { user_id: userId },
+        order: { date: 'DESC' },
+      }),
+      this.sleepSessionRepository.find({
+        where: [
+          { user_id: userId, ended_at: IsNull() },
+          { user_id: userId, date: today },
+        ],
+        order: { started_at: 'ASC' },
+      }),
+    ]);
 
     const summary = this.computeSummary(habits, dailyHistory, workouts);
 
@@ -98,9 +119,12 @@ export class HealthService {
         sleep_hours: Number(todayMetric.sleep_hours),
         exercise_minutes: todayMetric.exercise_minutes,
       },
+      sleep_sessions: sleepSessions.map((session) =>
+        this.serializeSleepSession(session),
+      ),
       weight_log: weightLog.map((entry) => this.serializeWeight(entry)),
       daily_history: dailyHistory.map((entry) => this.serializeDailyMetric(entry)),
-      habits: habits.map((habit) => this.serializeHabit(habit)),
+      habits: habits.map((habit) => this.habitsService.serializeHabit(habit)),
       workouts: workouts.map((workout) => this.serializeWorkout(workout)),
       mood_entries: moodEntries.map((entry) => this.serializeMood(entry)),
       mood_today: moodToday
@@ -142,15 +166,10 @@ export class HealthService {
     const metric = await this.getOrCreateTodayMetric(userId, today);
 
     if (dto.water_glasses !== undefined) metric.water_glasses = dto.water_glasses;
-    if (dto.sleep_hours !== undefined) metric.sleep_hours = dto.sleep_hours;
     if (dto.exercise_minutes !== undefined) metric.exercise_minutes = dto.exercise_minutes;
 
     const saved = await this.dailyMetricRepository.save(metric);
-    return {
-      water_glasses: saved.water_glasses,
-      sleep_hours: Number(saved.sleep_hours),
-      exercise_minutes: saved.exercise_minutes,
-    };
+    return this.serializeTodayMetrics(saved);
   }
 
   async adjustMetric(userId: string, dto: AdjustMetricDto) {
@@ -161,21 +180,118 @@ export class HealthService {
 
     if (dto.metric === 'water') {
       metric.water_glasses = Math.max(0, metric.water_glasses + delta);
-    } else if (dto.metric === 'sleep') {
-      metric.sleep_hours = Math.max(
-        0,
-        Math.round((Number(metric.sleep_hours) + delta) * 2) / 2,
-      );
     } else {
       metric.exercise_minutes = Math.max(0, metric.exercise_minutes + delta);
     }
 
     const saved = await this.dailyMetricRepository.save(metric);
-    return {
-      water_glasses: saved.water_glasses,
-      sleep_hours: Number(saved.sleep_hours),
-      exercise_minutes: saved.exercise_minutes,
-    };
+    return this.serializeTodayMetrics(saved);
+  }
+
+  async toggleSleep(userId: string, dto: ToggleSleepDto) {
+    const tappedAt = dto.timestamp ? new Date(dto.timestamp) : new Date();
+    if (Number.isNaN(tappedAt.getTime())) {
+      throw new BadRequestException('Invalid timestamp');
+    }
+    const localDate = dto.local_date ?? this.formatDateLocal(tappedAt);
+
+    const active = await this.sleepSessionRepository.findOne({
+      where: { user_id: userId, ended_at: IsNull() },
+      order: { started_at: 'DESC' },
+    });
+
+    if (active) {
+      if (tappedAt.getTime() <= new Date(active.started_at).getTime()) {
+        throw new BadRequestException('Wake time must be after bedtime');
+      }
+      const previousDate = active.date;
+      active.ended_at = tappedAt;
+      // Count sleep toward the day you wake up
+      active.date = localDate;
+      const saved = await this.sleepSessionRepository.save(active);
+      await this.syncSleepHoursForDate(userId, previousDate);
+      if (previousDate !== localDate) {
+        await this.syncSleepHoursForDate(userId, localDate);
+      }
+      return this.serializeSleepSession(saved);
+    }
+
+    const session = this.sleepSessionRepository.create({
+      user_id: userId,
+      date: localDate,
+      started_at: tappedAt,
+      ended_at: null,
+    });
+    const saved = await this.sleepSessionRepository.save(session);
+    return this.serializeSleepSession(saved);
+  }
+
+  async createSleepSession(userId: string, dto: CreateSleepSessionDto) {
+    if (dto.start_time === dto.end_time) {
+      throw new BadRequestException('Sleep start and end times must differ');
+    }
+
+    const date = dto.date ?? this.formatDateLocal(new Date());
+    const { startedAt, endedAt } = this.buildSleepWindow(
+      date,
+      dto.start_time,
+      dto.end_time,
+    );
+
+    const session = this.sleepSessionRepository.create({
+      user_id: userId,
+      date,
+      started_at: startedAt,
+      ended_at: endedAt,
+    });
+    const saved = await this.sleepSessionRepository.save(session);
+    await this.syncSleepHoursForDate(userId, date);
+    return this.serializeSleepSession(saved);
+  }
+
+  async updateSleepSession(
+    userId: string,
+    sessionId: string,
+    dto: UpdateSleepSessionDto,
+  ) {
+    const session = await this.findOwnedSleepSession(userId, sessionId);
+    if (!session.ended_at) {
+      throw new BadRequestException('Finish or cancel active sleep before editing');
+    }
+
+    const previousDate = session.date;
+    const date = dto.date ?? session.date;
+    const startTime =
+      dto.start_time ?? this.formatClock(session.started_at);
+    const endTime = dto.end_time ?? this.formatClock(session.ended_at);
+
+    if (startTime === endTime) {
+      throw new BadRequestException('Sleep start and end times must differ');
+    }
+
+    const { startedAt, endedAt } = this.buildSleepWindow(
+      date,
+      startTime,
+      endTime,
+    );
+    session.date = date;
+    session.started_at = startedAt;
+    session.ended_at = endedAt;
+
+    const saved = await this.sleepSessionRepository.save(session);
+    await this.syncSleepHoursForDate(userId, previousDate);
+    if (previousDate !== date) {
+      await this.syncSleepHoursForDate(userId, date);
+    }
+    return this.serializeSleepSession(saved);
+  }
+
+  async deleteSleepSession(userId: string, sessionId: string) {
+    const session = await this.findOwnedSleepSession(userId, sessionId);
+    const date = session.date;
+    await this.sleepSessionRepository.remove(session);
+    await this.syncSleepHoursForDate(userId, date);
+    return { success: true };
   }
 
   async logWeight(userId: string, dto: LogWeightDto) {
@@ -196,27 +312,6 @@ export class HealthService {
 
     const saved = await this.weightRepository.save(entry);
     return this.serializeWeight(saved);
-  }
-
-  async toggleHabit(userId: string, habitId: string) {
-    const habit = await this.findOwnedHabit(userId, habitId);
-    habit.completed = !habit.completed;
-    const saved = await this.habitRepository.save(habit);
-    return this.serializeHabit(saved);
-  }
-
-  async createHabit(userId: string, dto: CreateHabitDto) {
-    const habit = this.habitRepository.create({
-      user_id: userId,
-      name: dto.name,
-      frequency: dto.frequency ?? 'daily',
-      target: dto.target ?? 1,
-      current: 0,
-      streak: 0,
-      completed: false,
-    });
-    const saved = await this.habitRepository.save(habit);
-    return this.serializeHabit(saved);
   }
 
   async createWorkout(userId: string, dto: CreateWorkoutDto) {
@@ -288,21 +383,6 @@ export class HealthService {
     return metric;
   }
 
-  private async getHabits(userId: string) {
-    return this.habitRepository.find({
-      where: { user_id: userId },
-      order: { created_at: 'ASC' },
-    });
-  }
-
-  private async findOwnedHabit(userId: string, habitId: string) {
-    const habit = await this.habitRepository.findOne({
-      where: { id: habitId, user_id: userId },
-    });
-    if (!habit) throw new NotFoundException('Habit not found');
-    return habit;
-  }
-
   private resolveDateRange(filter: HealthFilterDto) {
     const start = filter.start_date;
     const end = filter.end_date;
@@ -324,7 +404,7 @@ export class HealthService {
   private computeHealthScore(
     settings: HealthSettings,
     today: HealthDailyMetric,
-    habits: HealthHabit[],
+    habits: Habit[],
   ) {
     const waterScore = settings.water_glasses_target
       ? Math.min(
@@ -358,7 +438,7 @@ export class HealthService {
   }
 
   private computeSummary(
-    habits: HealthHabit[],
+    habits: Habit[],
     dailyHistory: HealthDailyMetric[],
     workouts: HealthWorkout[],
   ) {
@@ -397,6 +477,96 @@ export class HealthService {
     };
   }
 
+  private async findOwnedSleepSession(userId: string, sessionId: string) {
+    const session = await this.sleepSessionRepository.findOne({
+      where: { id: sessionId, user_id: userId },
+    });
+    if (!session) throw new NotFoundException('Sleep session not found');
+    return session;
+  }
+
+  private buildSleepWindow(date: string, startTime: string, endTime: string) {
+    const startMinutes = this.timeToMinutes(startTime);
+    const endMinutes = this.timeToMinutes(endTime);
+    const overnight = endMinutes <= startMinutes;
+    const startedAt = this.combineLocalDateAndTime(
+      date,
+      startTime,
+      overnight ? -1 : 0,
+    );
+    const endedAt = this.combineLocalDateAndTime(date, endTime, 0);
+    return { startedAt, endedAt };
+  }
+
+  private timeToMinutes(time: string) {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+
+  private combineLocalDateAndTime(
+    date: string,
+    time: string,
+    dayOffset = 0,
+  ) {
+    const [year, month, day] = date.split('-').map(Number);
+    const [hours, minutes] = time.split(':').map(Number);
+    return new Date(year, month - 1, day + dayOffset, hours, minutes, 0, 0);
+  }
+
+  private async syncSleepHoursForDate(userId: string, date: string) {
+    const sessions = await this.sleepSessionRepository.find({
+      where: { user_id: userId, date },
+    });
+    const totalHours = sessions.reduce((sum, session) => {
+      if (!session.ended_at) return sum;
+      return sum + this.computeSleepHours(session.started_at, session.ended_at);
+    }, 0);
+    const metric = await this.getOrCreateTodayMetric(userId, date);
+    metric.sleep_hours = Math.round(totalHours * 2) / 2;
+    await this.dailyMetricRepository.save(metric);
+  }
+
+  private computeSleepHours(startedAt: Date, endedAt: Date) {
+    const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+    return Math.max(0, ms / (1000 * 60 * 60));
+  }
+
+  private formatClock(value: Date) {
+    const date = new Date(value);
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+
+  private serializeTodayMetrics(entry: HealthDailyMetric) {
+    return {
+      water_glasses: entry.water_glasses,
+      sleep_hours: Number(entry.sleep_hours),
+      exercise_minutes: entry.exercise_minutes,
+    };
+  }
+
+  private serializeSleepSession(session: HealthSleepSession) {
+    const isActive = !session.ended_at;
+    const hours = session.ended_at
+      ? Math.round(
+          this.computeSleepHours(session.started_at, session.ended_at) * 2,
+        ) / 2
+      : null;
+    return {
+      id: session.id,
+      date: session.date,
+      started_at: new Date(session.started_at).toISOString(),
+      ended_at: session.ended_at
+        ? new Date(session.ended_at).toISOString()
+        : null,
+      start_time: this.formatClock(session.started_at),
+      end_time: session.ended_at ? this.formatClock(session.ended_at) : null,
+      hours,
+      is_active: isActive,
+    };
+  }
+
   private serializeWeight(entry: HealthWeightEntry) {
     return {
       id: entry.id,
@@ -411,18 +581,6 @@ export class HealthService {
       water_glasses: entry.water_glasses,
       sleep_hours: Number(entry.sleep_hours),
       exercise_minutes: entry.exercise_minutes,
-    };
-  }
-
-  private serializeHabit(habit: HealthHabit) {
-    return {
-      id: habit.id,
-      name: habit.name,
-      streak: habit.streak,
-      target: Number(habit.target),
-      current: Number(habit.current),
-      completed: habit.completed,
-      frequency: habit.frequency,
     };
   }
 

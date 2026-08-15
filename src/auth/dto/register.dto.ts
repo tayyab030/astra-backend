@@ -2,11 +2,14 @@
 import {
   IsBoolean,
   IsEmail,
+  IsIn,
   IsString,
   Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { COUNTRY_CODES } from '../constants/country-currency';
+import { USER_GENDERS } from '../constants/user-gender';
 
 const PASSWORD_REGEX = {
   uppercase: /[A-Z]/,
@@ -14,30 +17,40 @@ const PASSWORD_REGEX = {
   number: /\d/,
   special: /[!@#$%^&*(),.?":{}|<>]/,
 };
-const USERNAME_REGEX = /^[a-zA-Z0-9@.+_-]+$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9._+-]+$/;
 const EMAIL_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 
 export class RegisterDto {
   @IsString()
   @MinLength(1, { message: 'First name is required' })
-  first_name: string;
+  first_name!: string;
 
   @IsString()
   @MinLength(1, { message: 'Last name is required' })
-  last_name: string;
+  last_name!: string;
 
   @IsString()
   @MinLength(3, { message: 'Username must be at least 3 characters' })
   @MaxLength(20, { message: 'Username must be no more than 20 characters' })
   @Matches(USERNAME_REGEX, {
     message:
-      'Username can only contain letters, numbers, and @ . + - _ characters',
+      'Username can only contain letters, numbers, and . + - _ characters',
   })
-  username: string;
+  username!: string;
 
   @IsEmail({}, { message: 'Invalid email address' })
   @Matches(EMAIL_REGEX, { message: 'Invalid email address' })
-  email: string;
+  email!: string;
+
+  @IsString()
+  @IsIn([...USER_GENDERS], {
+    message: 'Please select a valid gender',
+  })
+  gender!: string;
+
+  @IsString()
+  @IsIn(COUNTRY_CODES, { message: 'Please select a valid country' })
+  country!: string;
 
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })
@@ -53,7 +66,7 @@ export class RegisterDto {
   @Matches(PASSWORD_REGEX.special, {
     message: 'Password must contain at least 1 special character',
   })
-  password: string;
+  password!: string;
 
   @IsString()
   @MinLength(8, { message: 'Confirm password must be at least 8 characters' })
@@ -69,8 +82,8 @@ export class RegisterDto {
   @Matches(PASSWORD_REGEX.special, {
     message: 'Confirm password must contain at least 1 special character',
   })
-  confirmPassword: string;
+  confirmPassword!: string;
 
   @IsBoolean()
-  terms: boolean;
+  terms!: boolean;
 }

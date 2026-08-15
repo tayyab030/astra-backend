@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -11,13 +12,15 @@ import {
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import {
   AdjustMetricDto,
-  CreateHabitDto,
+  CreateSleepSessionDto,
   CreateWorkoutDto,
   HealthFilterDto,
   LogWeightDto,
   SaveMoodDto,
+  ToggleSleepDto,
   UpdateHealthProfileDto,
   UpdateHealthTargetsDto,
+  UpdateSleepSessionDto,
   UpdateTodayMetricsDto,
 } from './dto/health.dto';
 import { HealthService } from './health.service';
@@ -71,20 +74,37 @@ export class HealthController {
     return this.healthService.logWeight(req.user!.sub, dto);
   }
 
-  @Patch(['habits/:id/toggle', 'habits/:id/toggle/'])
-  toggleHabit(
+  @Post(['sleep-sessions/toggle', 'sleep-sessions/toggle/'])
+  toggleSleep(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ToggleSleepDto,
+  ) {
+    return this.healthService.toggleSleep(req.user!.sub, dto);
+  }
+
+  @Post(['sleep-sessions', 'sleep-sessions/'])
+  createSleepSession(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateSleepSessionDto,
+  ) {
+    return this.healthService.createSleepSession(req.user!.sub, dto);
+  }
+
+  @Patch(['sleep-sessions/:id', 'sleep-sessions/:id/'])
+  updateSleepSession(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateSleepSessionDto,
+  ) {
+    return this.healthService.updateSleepSession(req.user!.sub, id, dto);
+  }
+
+  @Delete(['sleep-sessions/:id', 'sleep-sessions/:id/'])
+  deleteSleepSession(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
   ) {
-    return this.healthService.toggleHabit(req.user!.sub, id);
-  }
-
-  @Post(['habits', 'habits/'])
-  createHabit(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: CreateHabitDto,
-  ) {
-    return this.healthService.createHabit(req.user!.sub, dto);
+    return this.healthService.deleteSleepSession(req.user!.sub, id);
   }
 
   @Post(['workouts', 'workouts/'])

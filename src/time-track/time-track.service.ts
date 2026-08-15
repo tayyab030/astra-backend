@@ -32,7 +32,10 @@ export class TimeTrackService {
 
   async getDashboard(userId: string, filterDto: TimeTrackFilterDto) {
     const { start_date, end_date } = this.resolveDateRange(filterDto);
-    const today = this.formatDate(new Date());
+    // Single-day queries (timer "today") must use the client's calendar date.
+    // toISOString() is UTC and skews "today" for timezones ahead of UTC.
+    const today =
+      start_date === end_date ? start_date : this.formatDateLocal(new Date());
 
     const [entries, trackedTasks, settings] = await Promise.all([
       this.findEntries(userId, start_date, end_date, filterDto.search),
@@ -85,14 +88,14 @@ export class TimeTrackService {
       user_id: userId,
       task_id: dto.task_id,
       task_title: task.title,
-      date: dto.entry_date ?? this.formatDate(startTime),
+      date: dto.entry_date ?? this.formatDateLocal(startTime),
       start_time: startTime,
       end_time: endTime,
       duration_seconds: dto.duration_seconds,
     });
 
     const saved = await this.entryRepository.save(entry);
-    const trackDate = dto.entry_date ?? this.formatDate(startTime);
+    const trackDate = dto.entry_date ?? this.formatDateLocal(startTime);
     await this.ensureTrackedTask(userId, dto.task_id, trackDate);
 
     return this.serializeEntry(saved);
@@ -128,7 +131,7 @@ export class TimeTrackService {
 
   async addTrackedTask(userId: string, dto: AddTrackedTaskDto) {
     await this.tasksService.getTask(userId, dto.task_id);
-    const trackDate = dto.track_date ?? this.formatDate(new Date());
+    const trackDate = dto.track_date ?? this.formatDateLocal(new Date());
 
     const existing = await this.trackedTaskRepository.findOne({
       where: {
@@ -157,7 +160,7 @@ export class TimeTrackService {
     taskId: string,
     trackDate?: string,
   ) {
-    const date = trackDate ?? this.formatDate(new Date());
+    const date = trackDate ?? this.formatDateLocal(new Date());
 
     await this.deleteTaskEntriesForDate(userId, taskId, date);
 
@@ -248,6 +251,14 @@ export class TimeTrackService {
       task_id: tracked.task_id,
       title: task.title,
       project_title: task.project_title ?? null,
+      project_color: task.project_color ?? null,
+      goal_title: task.goal_title ?? null,
+      goal_category_label: task.goal_category_label ?? null,
+      link_type: task.link_type ?? 'none',
+      due_date: task.due_date ?? null,
+      due_date_label: task.due_date_label ?? null,
+      priority: task.priority ?? 'medium',
+      status: task.status ?? 'todo',
       total_seconds_today: totalSecondsToday,
       is_active: false,
     };
@@ -348,7 +359,11 @@ export class TimeTrackService {
     };
   }
 
-  private formatDate(value: Date) {
-    return value.toISOString().slice(0, 10);
+  /** Calendar yyyy-MM-dd in the process local timezone (not UTC). */
+  private formatDateLocal(value: Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

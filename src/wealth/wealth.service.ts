@@ -9,7 +9,9 @@ import { Brackets, Repository } from 'typeorm';
 import {
   getCategoryLabel,
   isIncomeCategory,
+  LEGACY_INCOME_CATEGORY,
   WEALTH_EXPENSE_CATEGORIES,
+  WEALTH_INCOME_CATEGORIES,
 } from './constants/wealth-categories';
 import { CreateCategoryBudgetDto } from './dto/create-category-budget.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -193,6 +195,7 @@ export class WealthService {
       waste_spending: this.sumWasteSpending(transactions),
       transactions: serializedTransactions,
       category_totals: this.getCategoryTotals(transactions),
+      income_category_totals: this.getIncomeCategoryTotals(transactions),
       category_budgets: this.buildCategoryBudgets(budgets, budgetTransactions),
     };
   }
@@ -460,6 +463,38 @@ export class WealthService {
     });
 
     return WEALTH_EXPENSE_CATEGORIES.map((category) => ({
+      value: category.value,
+      label: category.label,
+      total: totals.get(category.value) ?? 0,
+    }));
+  }
+
+  private getIncomeCategoryTotals(transactions: WealthTransaction[]) {
+    const totals = new Map<string, number>();
+
+    WEALTH_INCOME_CATEGORIES.forEach((category) => {
+      totals.set(category.value, 0);
+    });
+
+    transactions.forEach((transaction) => {
+      const amount = Number(transaction.amount);
+      if (amount <= 0 || !isIncomeCategory(transaction.category)) {
+        return;
+      }
+
+      const key =
+        transaction.category === LEGACY_INCOME_CATEGORY
+          ? 'income_other'
+          : WEALTH_INCOME_CATEGORIES.some(
+                (category) => category.value === transaction.category,
+              )
+            ? transaction.category
+            : 'income_other';
+
+      totals.set(key, (totals.get(key) ?? 0) + Math.abs(amount));
+    });
+
+    return WEALTH_INCOME_CATEGORIES.map((category) => ({
       value: category.value,
       label: category.label,
       total: totals.get(category.value) ?? 0,

@@ -6,7 +6,9 @@ Aligned with the `astra-frontend` `tayyab-dev` branch. Use `Content-Type: applic
 
 ## `POST /auth/users/`
 
-Register. Body: `first_name`, `last_name`, `username`, `email`, `password`, `confirmPassword`, `terms` (must be `true`).
+Register. Body: `first_name`, `last_name`, `username`, `email`, `gender` (`male` | `female` | `other` | `prefer_not_to_say`), `country` (ISO country code, e.g. `PK`, `US`), `password`, `confirmPassword`, `terms` (must be `true`).
+
+Default `currency` and `timezone` are set automatically from the selected country (e.g. `PK` → `PKR` + `Asia/Karachi`). Default `theme` is `neon`. AI defaults: `ai_voice`=`austin`, `ai_voice_mode`=`false`, `ai_personality`=`professional`, `ai_insights`=`true`, `ai_data_scope`=`all`, `ai_language`=`en`.
 
 **200:** `{ "message": "Registration successful", "otp_token": "<uuid>" }`
 
@@ -42,9 +44,51 @@ If the current code is still valid, returns the existing token without sending a
 
 Login. Body: `{ "login": "<email or username>", "password": "<password>" }`
 
-**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name } }`
+**200:** `{ "access": "<jwt>", "refresh": "<jwt>", "user": { id, username, email, first_name, last_name, gender, currency, country, timezone, theme, ai_voice, ai_voice_mode, ai_personality, ai_insights, ai_data_scope, ai_language } }`
 
-**401:** `{ "non_field_errors": ["Unable to log in with provided credentials."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
+**401:** `{ "non_field_errors": ["Incorrect username/email or password. Please try again."] }` or `{ "non_field_errors": ["Email is not verified."], "is_unverified": true, "user_id": "<uuid>", "otp_token": "<uuid|null>", "otp_still_valid": true|false }`
+
+## `GET /auth/me/`
+
+Requires auth. Returns the current user profile.
+
+**200:** `{ "id", "username", "email", "first_name", "last_name", "gender", "currency", "country", "timezone", "theme", "ai_voice", "ai_voice_mode", "ai_personality", "ai_insights", "ai_data_scope", "ai_language" }`
+
+## `PATCH /auth/me/`
+
+Requires auth. Update profile fields. Body (all optional):
+
+```json
+{
+  "first_name": "Tayyab",
+  "last_name": "Ahmad",
+  "gender": "male",
+  "currency": "PKR",
+  "timezone": "Asia/Karachi",
+  "theme": "neon",
+  "ai_voice": "austin",
+  "ai_voice_mode": false,
+  "ai_personality": "professional",
+  "ai_insights": true,
+  "ai_data_scope": "all",
+  "ai_language": "en"
+}
+```
+
+`gender` must be one of: `male`, `female`, `other`, `prefer_not_to_say`.
+`currency` must be a 3-letter ISO code (e.g. `USD`, `EUR`, `PKR`).
+`timezone` must be an IANA timezone (e.g. `Asia/Karachi`, `America/New_York`).
+`theme` must be one of: `light`, `mist`, `dark`, `neon`, `ocean`, `forest`, `ember`, `aurora` (default on signup: `neon`).
+`ai_voice` must be one of English Orpheus voices (`austin`, `daniel`, `troy`, `autumn`, `diana`, `hannah`) or Arabic Orpheus voices (`abdullah`, `fahad`, `sultan`, `lulwa`, `noura`, `aisha`) (default: `austin`). Used by `POST /assistant/speech/`.
+`ai_voice_mode` boolean (default `false`) — client prefers speaking assistant replies.
+`ai_personality` one of: `professional`, `casual`, `motivational` (default `professional`).
+`ai_insights` boolean (default `true`) — allow unsolicited smart suggestions.
+`ai_data_scope` one of: `tasks`, `productivity`, `all` (default `all`). Controls what live context Groq receives (`all` includes wealth).
+`ai_language` ISO-639-1 code from Groq Whisper language list (default `en`). Used for chat reply language, STT, and TTS model selection (`en` / `ar` use native Orpheus; other languages still type+listen, speech falls back to English TTS).
+
+**200:** updated user object (same shape as `GET /auth/me/`).
+
+**404:** `{ "detail": "User not found." }`
 
 ## `POST /auth/jwt/refresh/`
 
@@ -123,6 +167,13 @@ Filtered dashboard. Defaults to the current month when query params are omitted.
   ],
   "category_totals": [
     { "value": "food", "label": "Food & Dining", "total": 85.5 }
+  ],
+  "income_category_totals": [
+    { "value": "salary", "label": "Salary", "total": 2600 },
+    { "value": "freelancing", "label": "Freelancing", "total": 0 },
+    { "value": "bonus", "label": "Bonus", "total": 0 },
+    { "value": "gift", "label": "Gift", "total": 0 },
+    { "value": "income_other", "label": "Other", "total": 0 }
   ]
 }
 ```
@@ -139,9 +190,11 @@ Create a transaction. Body:
 }
 ```
 
-`amount` is always positive in the request. The backend signs it: positive for `income`, negative for all other categories.
+`amount` is always positive in the request. The backend signs it: positive for income categories, negative for expense categories.
 
-**Categories:** `food`, `transport`, `housing`, `shopping`, `entertainment`, `waste`, `other`, `income`
+**Expense categories:** `food`, `transport`, `housing`, `shopping`, `entertainment`, `waste`, `other`
+
+**Income categories:** `salary`, `freelancing`, `bonus`, `gift`, `income_other` (legacy `income` still accepted)
 
 **200:** serialized transaction object (same shape as items in `transactions` above).
 
@@ -202,3 +255,141 @@ For withdrawals, `reason` must remain non-empty when provided. Increasing a with
 Delete a savings entry.
 
 **200:** `{ "message": "Saving deleted" }`
+
+## Assistant
+
+Requires auth. Groq key lives only on the backend (`CONSOLE_GROQ_API_KEY`). Conversations and messages are stored per user.
+
+### `GET /assistant/daily-quote/`
+
+Returns a short motivational quote generated by Groq. Cached for 12 hours (shared in-memory). Falls back to a static quote if Groq is unavailable.
+
+**200:**
+```json
+{
+  "quote": "Small daily habits compound into extraordinary results.",
+  "date": "2026-08-15",
+  "source": "groq"
+}
+```
+
+`source` is one of: `groq`, `cache`, `fallback`.
+
+### `GET /assistant/goals-quote/`
+
+Same as daily-quote, but goals-themed (ambition, milestones, finishing). Cached 12 hours in-memory. Fallback: `A goal is a dream with a deadline.`
+
+**200:** `{ "quote": "…", "date": "2026-08-15", "source": "groq" }`
+
+### `POST /assistant/insights/`
+
+Generate personalized AI insights / forecasts for a page section via Groq. Soft-disables when the user’s `ai_insights` preference is `false` (`enabled: false`, empty payload).
+
+Use `period`:
+
+- `mixed` (**default**) — one list mixing **Today**, **Last week**, and **Last month** items. Each item has `horizon`. Items are returned in **random order**. Cached until local midnight.
+- `weekly` — last week only (Mon–Sun). Cached until next Monday.
+- `monthly` — last calendar month only. Cached until the 1st of next month.
+
+Clients should cache by `period_key` / `cache_until` (localStorage is fine).
+
+Body:
+```json
+{
+  "kind": "dashboard | analytics | life_score | habits | goals | wealth | health",
+  "period": "mixed | weekly | monthly",
+  "context": { "optional": "compact stats from the client" }
+}
+```
+
+**200 (list kinds — dashboard, habits, goals, wealth, health):**
+```json
+{
+  "kind": "dashboard",
+  "period": "mixed",
+  "period_key": "mixed:2026-08-15",
+  "period_label": "Mixed (today, last week …, last month)",
+  "covers_from": "2026-07-01",
+  "covers_to": "2026-08-15",
+  "cache_until": "2026-08-15T19:00:00.000Z",
+  "enabled": true,
+  "source": "groq",
+  "generated_at": "2026-08-15T12:00:00.000Z",
+  "items": [
+    { "title": "Focus", "message": "…", "type": "tip", "horizon": "today" }
+  ]
+}
+```
+
+`horizon` is `today` | `last_week` | `last_month`. Dashboard returns **6** items; other list kinds return **4–5**.
+
+**200 (life_score):** includes `text` and optional `forecast: { score, label }`.
+
+**200 (analytics):** includes `daily`, `monthly`, `cross_domain[]`, `story`, `predictions[]`, `coach[]`, `goal_prediction`.
+
+If Groq fails or returns unusable JSON: `source: "fallback"` with empty content (no fake marketing copy).
+
+### `GET /assistant/conversations/`
+
+List conversations (newest first).
+
+**200:** `[{ id, title, created_at, updated_at }, ...]`
+
+### `POST /assistant/conversations/`
+
+Create an empty conversation. Body (optional): `{ "title": "New chat" }`
+
+**200:** `{ id, title, created_at, updated_at }`
+
+### `GET /assistant/conversations/:id/`
+
+**200:** `{ conversation, messages: [{ id, conversation_id, role, content, created_at }] }`
+
+### `PATCH /assistant/conversations/:id/`
+
+Rename a conversation. Body: `{ "title": "Budget review" }`
+
+**200:** `{ id, title, created_at, updated_at }`
+
+### `DELETE /assistant/conversations/:id/`
+
+**200:** `{ "message": "Conversation deleted" }`
+
+### `POST /assistant/chat/`
+
+Send a user message. Builds live user + wealth context, calls Groq, saves both turns.
+
+Body:
+```json
+{
+  "message": "What is my net worth?",
+  "conversation_id": "<optional-uuid>"
+}
+```
+
+**200:**
+```json
+{
+  "conversation": { "id": "...", "title": "...", "created_at": "...", "updated_at": "..." },
+  "user_message": { "id": "...", "conversation_id": "...", "role": "user", "content": "...", "created_at": "..." },
+  "assistant_message": { "id": "...", "conversation_id": "...", "role": "assistant", "content": "...", "created_at": "..." }
+}
+```
+
+### `POST /assistant/speech/`
+
+TTS (Orpheus). Body: `{ "text": "Hello" }`
+
+**200:** raw `audio/wav`
+
+### `POST /assistant/transcribe/`
+
+STT (Whisper). Multipart field `file`.
+
+**200:** `{ "text": "..." }`
+
+### `POST /assistant/transcribe/base64/`
+
+STT for mobile. Body: `{ "audio": "<base64 or data-url>", "mime_type": "audio/m4a" }`
+
+**200:** `{ "text": "..." }`

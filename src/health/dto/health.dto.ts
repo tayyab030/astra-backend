@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -59,16 +60,53 @@ export class UpdateTodayMetricsDto {
   water_glasses?: number;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(16)
-  sleep_hours?: number;
-
-  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(600)
   exercise_minutes?: number;
+}
+
+export class ToggleSleepDto {
+  /** Client tap time (ISO). Falls back to server now. */
+  @IsOptional()
+  @IsDateString()
+  timestamp?: string;
+
+  /** Client local calendar date for the tap (YYYY-MM-DD). */
+  @IsOptional()
+  @IsDateString()
+  local_date?: string;
+}
+
+export class CreateSleepSessionDto {
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  start_time: string;
+
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  end_time: string;
+
+  /** Calendar day this sleep counts toward (usually wake day). */
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+}
+
+export class UpdateSleepSessionDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  start_time?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  end_time?: string;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
 }
 
 export class LogWeightDto {
@@ -80,22 +118,6 @@ export class LogWeightDto {
   @IsOptional()
   @IsDateString()
   date?: string;
-}
-
-export class CreateHabitDto {
-  @IsString()
-  @MaxLength(255)
-  name: string;
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['daily', 'weekly', 'custom'])
-  frequency?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  target?: number;
 }
 
 export class CreateWorkoutDto {
@@ -135,8 +157,8 @@ export class SaveMoodDto {
 
 export class AdjustMetricDto {
   @IsString()
-  @IsIn(['water', 'sleep', 'exercise'])
-  metric: 'water' | 'sleep' | 'exercise';
+  @IsIn(['water', 'exercise'])
+  metric: 'water' | 'exercise';
 
   @IsInt()
   @IsIn([-1, 1])

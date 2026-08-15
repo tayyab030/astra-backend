@@ -11,5 +11,6 @@ import { WealthService } from './wealth.service';
   ],
   controllers: [WealthController],
   providers: [WealthService],
+  exports: [WealthService],
 })
 export class WealthModule {}
