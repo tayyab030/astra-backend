@@ -34,6 +34,14 @@ export class AssistantService {
     return this.conversations.deleteConversation(userId, conversationId);
   }
 
+  updateConversation(userId: string, conversationId: string, title: string) {
+    return this.conversations.updateConversation(
+      userId,
+      conversationId,
+      title,
+    );
+  }
+
   async sendMessage(
     userId: string,
     options: { conversationId?: string; message: string },

@@ -65,6 +65,20 @@ export class ConversationService {
     return { message: 'Conversation deleted' };
   }
 
+  async updateConversation(
+    userId: string,
+    conversationId: string,
+    title: string,
+  ) {
+    const conversation = await this.findOwnedConversation(
+      userId,
+      conversationId,
+    );
+    conversation.title = title.trim().slice(0, 200) || 'New chat';
+    const saved = await this.conversationRepository.save(conversation);
+    return this.serializeConversation(saved);
+  }
+
   async resolveConversation(userId: string, conversationId?: string) {
     if (conversationId) {
       return this.findOwnedConversation(userId, conversationId);

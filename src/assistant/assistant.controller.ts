@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   Res,
@@ -19,6 +20,7 @@ import { AssistantService } from './assistant.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { SpeechDto, TranscribeJsonDto } from './dto/speech.dto';
+import { UpdateConversationDto } from './dto/update-conversation.dto';
 
 @Controller('assistant')
 export class AssistantController {
@@ -48,6 +50,19 @@ export class AssistantController {
     @Param('id') id: string,
   ) {
     return this.assistantService.deleteConversation(req.user!.sub, id);
+  }
+
+  @Patch(['conversations/:id', 'conversations/:id/'])
+  updateConversation(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateConversationDto,
+  ) {
+    return this.assistantService.updateConversation(
+      req.user!.sub,
+      id,
+      dto.title,
+    );
   }
 
   @Post(['chat', 'chat/'])

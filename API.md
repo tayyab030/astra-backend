@@ -264,6 +264,12 @@ Create an empty conversation. Body (optional): `{ "title": "New chat" }`
 
 **200:** `{ conversation, messages: [{ id, conversation_id, role, content, created_at }] }`
 
+### `PATCH /assistant/conversations/:id/`
+
+Rename a conversation. Body: `{ "title": "Budget review" }`
+
+**200:** `{ id, title, created_at, updated_at }`
+
 ### `DELETE /assistant/conversations/:id/`
 
 **200:** `{ "message": "Conversation deleted" }`
