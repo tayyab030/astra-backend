@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AccountDeleteController } from './account-delete.controller';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtController } from './jwt.controller';
@@ -17,6 +18,7 @@ import { User } from './entities/user.entity';
     MeController,
     OtpController,
     PasswordController,
+    AccountDeleteController,
   ],
   providers: [AuthService, RequireAuthMiddleware],
   exports: [AuthService],

@@ -64,6 +64,24 @@ export class User {
   @Column({ type: 'varchar', length: 16, default: 'en' })
   ai_language!: string;
 
+  /** Life Score weights + which app modules are enabled. */
+  @Column({ type: 'jsonb', nullable: true })
+  module_settings!: {
+    weights?: {
+      productivity?: number;
+      health?: number;
+      wealth?: number;
+      knowledge?: number;
+    };
+    enabled?: {
+      tasks?: boolean;
+      wealth?: boolean;
+      health?: boolean;
+      notes?: boolean;
+      analytics?: boolean;
+    };
+  } | null;
+
   @Column({ type: 'boolean', default: false })
   is_verified!: boolean;
 
@@ -87,6 +105,12 @@ export class User {
 
   @Column({ type: 'timestamp', nullable: true })
   password_reset_expires_at!: Date | null;
+
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  account_delete_token!: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  account_delete_expires_at!: Date | null;
 
   @CreateDateColumn()
   created_at!: Date;

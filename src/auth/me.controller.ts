@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Req } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
 import type { AuthenticatedRequest } from './types/authenticated-request';
 import { AuthService } from './auth.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -15,5 +15,10 @@ export class MeController {
   @Patch(['', '/'])
   updateMe(@Req() req: AuthenticatedRequest, @Body() dto: UpdateProfileDto) {
     return this.authService.updateMe(req.user!.sub, dto);
+  }
+
+  @Post(['delete-account', 'delete-account/'])
+  requestDeleteAccount(@Req() req: AuthenticatedRequest) {
+    return this.authService.requestAccountDeletion(req.user!.sub);
   }
 }

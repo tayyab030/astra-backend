@@ -2,12 +2,18 @@
 import {
   IsBoolean,
   IsIn,
+  IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { TIMEZONE_VALUES } from '../constants/country-currency';
 import { AI_VOICES } from '../constants/ai-voice';
 import {
@@ -28,6 +34,68 @@ export const USER_THEMES = [
   'aurora',
 ] as const;
 export type UserTheme = (typeof USER_THEMES)[number];
+
+class ModuleWeightsDto {
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  productivity?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  health?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  wealth?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  knowledge?: number;
+}
+
+class ModuleEnabledDto {
+  @IsOptional()
+  @IsBoolean()
+  tasks?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  wealth?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  health?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notes?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  analytics?: boolean;
+}
+
+export class ModuleSettingsDto {
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ModuleWeightsDto)
+  weights?: ModuleWeightsDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ModuleEnabledDto)
+  enabled?: ModuleEnabledDto;
+}
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -103,4 +171,10 @@ export class UpdateProfileDto {
     message: 'Please select a valid AI language',
   })
   ai_language?: string;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ModuleSettingsDto)
+  module_settings?: ModuleSettingsDto;
 }

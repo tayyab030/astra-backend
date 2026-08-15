@@ -10,7 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { JwtCreateDto } from './dto/jwt-create.dto';
 import { JwtRefreshDto } from './dto/jwt-refresh.dto';
 import { JwtVerifyDto } from './dto/jwt-verify.dto';
@@ -21,6 +21,7 @@ import { ResendOtpDto } from './dto/resend-otp.dto';
 import { ResendOtpLoginDto } from './dto/resend-otp-login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ConfirmAccountDeleteDto } from './dto/confirm-account-delete.dto';
 import { DEFAULT_AI_VOICE, isAiVoice } from './constants/ai-voice';
 import {
   DEFAULT_AI_DATA_SCOPE,
@@ -34,22 +35,56 @@ import {
   DEFAULT_AI_LANGUAGE,
   isAiLanguage,
 } from './constants/ai-language';
+import {
+  DEFAULT_MODULE_SETTINGS,
+  normalizeModuleSettings,
+} from './constants/module-settings';
 import { getCurrencyForCountry, getTimezoneForCountry } from './constants/country-currency';
-import { sendOtpEmail, sendPasswordResetEmail } from './email';
+import {
+  sendAccountDeleteEmail,
+  sendOtpEmail,
+  sendPasswordResetEmail,
+} from './email';
 import { User } from './entities/user.entity';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000;
+const ACCOUNT_DELETE_TTL_MS = 20 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
 const ACCESS_TOKEN_TTL = '60m';
 const REFRESH_TOKEN_TTL = '7d';
 const EMAIL_LIKE_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+
+/** Tables keyed by user_id — delete before removing the user row. */
+const USER_DATA_TABLES = [
+  'assistant_messages',
+  'assistant_conversations',
+  'habit_day_logs',
+  'health_habits',
+  'health_sleep_sessions',
+  'health_daily_metrics',
+  'health_mood_entries',
+  'health_workouts',
+  'health_weight_entries',
+  'health_settings',
+  'notes',
+  'time_entries',
+  'time_tracked_tasks',
+  'time_track_settings',
+  'tasks',
+  'goals',
+  'projects',
+  'wealth_category_budgets',
+  'wealth_savings',
+  'wealth_transactions',
+] as const;
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly dataSource: DataSource,
   ) {}
 
   private getJwtSecret() {
@@ -98,6 +133,7 @@ export class AuthService {
       ai_language: isAiLanguage(user.ai_language)
         ? user.ai_language
         : DEFAULT_AI_LANGUAGE,
+      module_settings: normalizeModuleSettings(user.module_settings),
       is_verified: user.is_verified,
       created_at: user.created_at?.toISOString?.() ?? user.created_at,
     };
@@ -152,6 +188,19 @@ export class AuthService {
     }
     if (dto.ai_language !== undefined) {
       user.ai_language = dto.ai_language;
+    }
+    if (dto.module_settings !== undefined) {
+      const current = normalizeModuleSettings(user.module_settings);
+      user.module_settings = normalizeModuleSettings({
+        weights: {
+          ...current.weights,
+          ...dto.module_settings.weights,
+        },
+        enabled: {
+          ...current.enabled,
+          ...dto.module_settings.enabled,
+        },
+      });
     }
 
     const saved = await this.userRepository.save(user);
@@ -222,6 +271,30 @@ export class AuthService {
         user.password_reset_expires_at &&
         user.password_reset_expires_at.getTime() > Date.now(),
     );
+  }
+
+  private isAccountDeleteStillValid(user: User) {
+    return Boolean(
+      user.account_delete_token &&
+        user.account_delete_expires_at &&
+        user.account_delete_expires_at.getTime() > Date.now(),
+    );
+  }
+
+  private async wipeAllUserData(userId: string) {
+    await this.dataSource.transaction(async (manager) => {
+      // Milestones hang off goals (CASCADE); remove orphan-safe via goal ids first if needed.
+      await manager.query(
+        `DELETE FROM goal_milestones WHERE goal_id IN (SELECT id FROM goals WHERE user_id = $1)`,
+        [userId],
+      );
+
+      for (const table of USER_DATA_TABLES) {
+        await manager.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
+      }
+
+      await manager.query(`DELETE FROM users WHERE id = $1`, [userId]);
+    });
   }
 
   private async issueOtp(user: User) {
@@ -302,6 +375,7 @@ export class AuthService {
       ai_insights: DEFAULT_AI_INSIGHTS,
       ai_data_scope: DEFAULT_AI_DATA_SCOPE,
       ai_language: DEFAULT_AI_LANGUAGE,
+      module_settings: DEFAULT_MODULE_SETTINGS,
     });
     const saved = await this.userRepository.save(user);
     const withOtp = await this.issueOtp(saved);
@@ -621,5 +695,96 @@ export class AuthService {
     await this.userRepository.save(user);
 
     return { message: 'Password reset successful' };
+  }
+
+  async requestAccountDeletion(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException({ detail: 'User not found.' });
+    }
+
+    if (this.isAccountDeleteStillValid(user)) {
+      const remainingMs =
+        user.account_delete_expires_at!.getTime() - Date.now();
+      const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+      throw new ConflictException({
+        detail:
+          'A deletion confirmation email was already sent and is still valid. Check your inbox.',
+        remaining_time_seconds: remainingSeconds,
+        code: 'account_delete_pending',
+      });
+    }
+
+    user.account_delete_token = randomUUID();
+    user.account_delete_expires_at = new Date(
+      Date.now() + ACCOUNT_DELETE_TTL_MS,
+    );
+    await this.userRepository.save(user);
+
+    const frontendUrl =
+      process.env.FRONTEND_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
+    const deleteUrl = `${frontendUrl}/auth/delete-account?token=${user.account_delete_token}`;
+    const sent = await sendAccountDeleteEmail({
+      to: user.email,
+      deleteUrl,
+    });
+
+    if (!sent) {
+      throw new InternalServerErrorException({
+        detail:
+          'Could not send the confirmation email. Please try again later.',
+      });
+    }
+
+    return {
+      message:
+        'We sent a confirmation link to your email. It expires in 20 minutes.',
+      sent: true,
+      remaining_time_seconds: Math.floor(ACCOUNT_DELETE_TTL_MS / 1000),
+    };
+  }
+
+  async getAccountDeleteStatus(token: string) {
+    const user = await this.userRepository.findOne({
+      where: { account_delete_token: token },
+    });
+    if (!user || !user.account_delete_expires_at) {
+      throw new NotFoundException({ detail: 'Invalid or expired delete link.' });
+    }
+
+    const remainingMs =
+      user.account_delete_expires_at.getTime() - Date.now();
+    if (remainingMs <= 0) {
+      throw new NotFoundException({ detail: 'Invalid or expired delete link.' });
+    }
+
+    return {
+      email: user.email,
+      remaining_time_seconds: Math.max(0, Math.floor(remainingMs / 1000)),
+    };
+  }
+
+  async confirmAccountDeletion(dto: ConfirmAccountDeleteDto) {
+    const user = await this.userRepository.findOne({
+      where: { account_delete_token: dto.token },
+    });
+    if (!user || !user.account_delete_expires_at) {
+      throw new BadRequestException({
+        token: ['Invalid or expired delete link.'],
+      });
+    }
+    if (user.account_delete_expires_at.getTime() < Date.now()) {
+      throw new BadRequestException({
+        token: ['This delete link has expired. Request a new one from Settings.'],
+      });
+    }
+
+    const email = user.email;
+    await this.wipeAllUserData(user.id);
+
+    return {
+      message: 'Your account and all related data have been permanently deleted.',
+      email,
+    };
   }
 }

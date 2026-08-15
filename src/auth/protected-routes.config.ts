@@ -21,6 +21,7 @@ export const publicRoutePrefixes = [
   'auth/users',
   'auth/jwt',
   'auth/password',
+  'auth/account-delete',
 ];
 
 function normalizeRoutePath(path: string): string {

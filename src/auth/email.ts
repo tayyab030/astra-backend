@@ -11,6 +11,11 @@ type SendPasswordResetEmailInput = {
   resetUrl: string;
 };
 
+type SendAccountDeleteEmailInput = {
+  to: string;
+  deleteUrl: string;
+};
+
 const logger = new Logger('EmailService');
 
 function getEnv(name: string) {
@@ -123,6 +128,62 @@ export async function sendPasswordResetEmail({
   } catch (error) {
     logger.error(
       `Failed to send password reset email to ${to}`,
+      error instanceof Error ? error.stack : String(error),
+    );
+    return false;
+  }
+}
+
+export async function sendAccountDeleteEmail({
+  to,
+  deleteUrl,
+}: SendAccountDeleteEmailInput): Promise<boolean> {
+  const host = getEnv('SMTP_HOST');
+  const portRaw = getEnv('SMTP_PORT') ?? '587';
+  const user = getEnv('SMTP_USER');
+  const pass = normalizeSmtpPassword(getEnv('SMTP_PASS'));
+  const from = getEnv('SMTP_FROM') ?? 'no-reply@example.com';
+
+  if (!host || !user || !pass) {
+    logger.warn('SMTP not configured — skipping account delete email');
+    return false;
+  }
+
+  const port = Number(portRaw);
+  const secure = port === 465;
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+    });
+
+    const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+      <h2 style="color:#b91c1c;">Confirm account deletion</h2>
+      <p>You requested to permanently delete your ASTRA account and all related data.</p>
+      <p>This action cannot be undone. Click the button below to confirm:</p>
+      <p style="margin: 24px 0;">
+        <a href="${deleteUrl}" style="display: inline-block; padding: 12px 24px; background: #dc2626; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold;">Confirm Delete Account</a>
+      </p>
+      <p style="color:#6b7280; font-size: 12px;">This link expires in 20 minutes. If you did not request this, you can ignore this email — your account will stay active.</p>
+      <p style="color:#6b7280; font-size: 12px; word-break: break-all;">${deleteUrl}</p>
+    </div>
+  `;
+
+    await transporter.sendMail({
+      from,
+      to,
+      subject: 'Confirm ASTRA account deletion',
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    logger.error(
+      `Failed to send account delete email to ${to}`,
       error instanceof Error ? error.stack : String(error),
     );
     return false;
