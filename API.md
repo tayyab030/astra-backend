@@ -243,3 +243,66 @@ For withdrawals, `reason` must remain non-empty when provided. Increasing a with
 Delete a savings entry.
 
 **200:** `{ "message": "Saving deleted" }`
+
+## Assistant
+
+Requires auth. Groq key lives only on the backend (`CONSOLE_GROQ_API_KEY`). Conversations and messages are stored per user.
+
+### `GET /assistant/conversations/`
+
+List conversations (newest first).
+
+**200:** `[{ id, title, created_at, updated_at }, ...]`
+
+### `POST /assistant/conversations/`
+
+Create an empty conversation. Body (optional): `{ "title": "New chat" }`
+
+**200:** `{ id, title, created_at, updated_at }`
+
+### `GET /assistant/conversations/:id/`
+
+**200:** `{ conversation, messages: [{ id, conversation_id, role, content, created_at }] }`
+
+### `DELETE /assistant/conversations/:id/`
+
+**200:** `{ "message": "Conversation deleted" }`
+
+### `POST /assistant/chat/`
+
+Send a user message. Builds live user + wealth context, calls Groq, saves both turns.
+
+Body:
+```json
+{
+  "message": "What is my net worth?",
+  "conversation_id": "<optional-uuid>"
+}
+```
+
+**200:**
+```json
+{
+  "conversation": { "id": "...", "title": "...", "created_at": "...", "updated_at": "..." },
+  "user_message": { "id": "...", "conversation_id": "...", "role": "user", "content": "...", "created_at": "..." },
+  "assistant_message": { "id": "...", "conversation_id": "...", "role": "assistant", "content": "...", "created_at": "..." }
+}
+```
+
+### `POST /assistant/speech/`
+
+TTS (Orpheus). Body: `{ "text": "Hello" }`
+
+**200:** raw `audio/wav`
+
+### `POST /assistant/transcribe/`
+
+STT (Whisper). Multipart field `file`.
+
+**200:** `{ "text": "..." }`
+
+### `POST /assistant/transcribe/base64/`
+
+STT for mobile. Body: `{ "audio": "<base64 or data-url>", "mime_type": "audio/m4a" }`
+
+**200:** `{ "text": "..." }`

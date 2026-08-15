@@ -2,7 +2,16 @@
  * URL paths after `api/` that require a valid access token.
  * Example: `auth` protects `/api/auth/*` except routes listed in publicRoutePrefixes.
  */
-export const protectedRoutePrefixes = ['auth', 'goals', 'tasks', 'wealth', 'time-track', 'health', 'notes'];
+export const protectedRoutePrefixes = [
+  'auth',
+  'goals',
+  'tasks',
+  'wealth',
+  'time-track',
+  'health',
+  'notes',
+  'assistant',
+];
 
 /**
  * Paths that stay public even when they match a protected prefix.

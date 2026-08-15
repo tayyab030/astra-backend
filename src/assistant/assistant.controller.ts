@@ -1,0 +1,113 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
+import { AssistantService } from './assistant.service';
+import { CreateConversationDto } from './dto/create-conversation.dto';
+import { SendMessageDto } from './dto/send-message.dto';
+import { SpeechDto, TranscribeJsonDto } from './dto/speech.dto';
+
+@Controller('assistant')
+export class AssistantController {
+  constructor(private readonly assistantService: AssistantService) {}
+
+  @Get(['conversations', 'conversations/'])
+  listConversations(@Req() req: AuthenticatedRequest) {
+    return this.assistantService.listConversations(req.user!.sub);
+  }
+
+  @Post(['conversations', 'conversations/'])
+  createConversation(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateConversationDto,
+  ) {
+    return this.assistantService.createConversation(req.user!.sub, dto.title);
+  }
+
+  @Get(['conversations/:id', 'conversations/:id/'])
+  getConversation(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.assistantService.getConversation(req.user!.sub, id);
+  }
+
+  @Delete(['conversations/:id', 'conversations/:id/'])
+  deleteConversation(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.assistantService.deleteConversation(req.user!.sub, id);
+  }
+
+  @Post(['chat', 'chat/'])
+  sendMessage(@Req() req: AuthenticatedRequest, @Body() dto: SendMessageDto) {
+    return this.assistantService.sendMessage(req.user!.sub, {
+      conversationId: dto.conversation_id,
+      message: dto.message,
+    });
+  }
+
+  @Post(['speech', 'speech/'])
+  async speech(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: SpeechDto,
+    @Res() res: Response,
+  ) {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException({ detail: 'Authentication required.' });
+    }
+    const wav = await this.assistantService.createSpeech(dto.text);
+    res.setHeader('Content-Type', 'audio/wav');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(wav);
+  }
+
+  /** Web / multipart uploads */
+  @Post(['transcribe', 'transcribe/'])
+  @UseInterceptors(FileInterceptor('file'))
+  async transcribeFile(
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException({ detail: 'Authentication required.' });
+    }
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Multipart field "file" is required.');
+    }
+    const text = await this.assistantService.transcribe({
+      buffer: file.buffer,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+    });
+    return { text };
+  }
+
+  /** Mobile / Expo-friendly Base64 payload */
+  @Post(['transcribe/base64', 'transcribe/base64/'])
+  async transcribeBase64(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: TranscribeJsonDto,
+  ) {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException({ detail: 'Authentication required.' });
+    }
+    const raw = dto.audio.trim();
+    const dataUrl = raw.startsWith('data:')
+      ? raw
+      : `data:${dto.mime_type || 'audio/m4a'};base64,${raw}`;
+    const text = await this.assistantService.transcribe({ dataUrl });
+    return { text };
+  }
+}

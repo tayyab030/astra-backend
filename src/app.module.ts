@@ -10,6 +10,7 @@ import { HealthModule } from './health/health.module';
 import { NotesModule } from './notes/notes.module';
 import { TimeTrackModule } from './time-track/time-track.module';
 import { WealthModule } from './wealth/wealth.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { WealthModule } from './wealth/wealth.module';
     TimeTrackModule,
     HealthModule,
     NotesModule,
+    AssistantModule,
   ],
   controllers: [AppController],
   providers: [AppService],
