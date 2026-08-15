@@ -6,6 +6,7 @@ import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { AssistantContextService } from './context/assistant-context.service';
 import { ConversationService } from './conversation/conversation.service';
+import { DailyQuoteService } from './daily-quote.service';
 import { AssistantConversation } from './entities/assistant-conversation.entity';
 import { AssistantMessage } from './entities/assistant-message.entity';
 import { GroqChatService } from './groq/groq-chat.service';
@@ -23,6 +24,7 @@ import { GroqTranscribeService } from './groq/groq-transcribe.service';
     AssistantService,
     ConversationService,
     AssistantContextService,
+    DailyQuoteService,
     GroqChatService,
     GroqSpeechService,
     GroqTranscribeService,

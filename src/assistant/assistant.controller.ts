@@ -14,8 +14,10 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Response } from 'express';
+import type { Express, Response } from 'express';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
+/// Ensures Express.Multer.File is available under moduleResolution nodenext.
+import 'multer';
 import { AssistantService } from './assistant.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -25,6 +27,14 @@ import { UpdateConversationDto } from './dto/update-conversation.dto';
 @Controller('assistant')
 export class AssistantController {
   constructor(private readonly assistantService: AssistantService) {}
+
+  @Get(['daily-quote', 'daily-quote/'])
+  getDailyQuote(@Req() req: AuthenticatedRequest) {
+    if (!req.user?.sub) {
+      throw new UnauthorizedException({ detail: 'Authentication required.' });
+    }
+    return this.assistantService.getDailyQuote();
+  }
 
   @Get(['conversations', 'conversations/'])
   listConversations(@Req() req: AuthenticatedRequest) {

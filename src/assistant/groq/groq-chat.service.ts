@@ -91,4 +91,52 @@ export class GroqChatService {
 
     return content;
   }
+
+  /** One-off prompt (no Astra chat history / user context). */
+  async completePrompt(options: {
+    system: string;
+    user: string;
+    temperature?: number;
+    maxTokens?: number;
+  }): Promise<string> {
+    const apiKey = assertGroqApiKey();
+
+    let response: Response;
+    try {
+      response = await fetch(GROQ_CHAT_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: GROQ_CHAT_MODEL,
+          messages: [
+            { role: 'system', content: options.system },
+            { role: 'user', content: options.user },
+          ],
+          temperature: options.temperature ?? 0.9,
+          max_tokens: options.maxTokens ?? 80,
+        }),
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        error instanceof Error ? error.message : 'Failed to reach Groq chat.',
+      );
+    }
+
+    const data = (await response.json()) as GroqChatCompletionResponse;
+    if (!response.ok) {
+      throw new ServiceUnavailableException(
+        data.error?.message ?? `Groq chat failed (${response.status})`,
+      );
+    }
+
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new ServiceUnavailableException('Groq returned an empty response.');
+    }
+
+    return content;
+  }
 }
