@@ -120,39 +120,6 @@ export class LogWeightDto {
   date?: string;
 }
 
-export class CreateHabitDto {
-  @IsString()
-  @MaxLength(255)
-  name: string;
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['daily', 'weekly', 'custom'])
-  frequency?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  target?: number;
-}
-
-export class UpdateHabitDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  name?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['daily', 'weekly', 'custom'])
-  frequency?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  target?: number;
-}
-
 export class CreateWorkoutDto {
   @IsString()
   @MaxLength(64)

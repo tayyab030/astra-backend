@@ -5,23 +5,22 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, IsNull, Repository } from 'typeorm';
+import { Habit } from '../habits/entities/habit.entity';
+import { HabitsService } from '../habits/habits.service';
 import {
   AdjustMetricDto,
-  CreateHabitDto,
+  CreateSleepSessionDto,
   CreateWorkoutDto,
   HealthFilterDto,
   LogWeightDto,
   SaveMoodDto,
   ToggleSleepDto,
-  CreateSleepSessionDto,
-  UpdateSleepSessionDto,
-  UpdateHabitDto,
   UpdateHealthProfileDto,
   UpdateHealthTargetsDto,
+  UpdateSleepSessionDto,
   UpdateTodayMetricsDto,
 } from './dto/health.dto';
 import { HealthDailyMetric } from './entities/health-daily-metric.entity';
-import { HealthHabit } from './entities/health-habit.entity';
 import { HealthMoodEntry } from './entities/health-mood-entry.entity';
 import { HealthSettings } from './entities/health-settings.entity';
 import { HealthSleepSession } from './entities/health-sleep-session.entity';
@@ -36,14 +35,13 @@ const METRIC_STEPS = {
 @Injectable()
 export class HealthService {
   constructor(
+    private readonly habitsService: HabitsService,
     @InjectRepository(HealthSettings)
     private readonly settingsRepository: Repository<HealthSettings>,
     @InjectRepository(HealthDailyMetric)
     private readonly dailyMetricRepository: Repository<HealthDailyMetric>,
     @InjectRepository(HealthWeightEntry)
     private readonly weightRepository: Repository<HealthWeightEntry>,
-    @InjectRepository(HealthHabit)
-    private readonly habitRepository: Repository<HealthHabit>,
     @InjectRepository(HealthWorkout)
     private readonly workoutRepository: Repository<HealthWorkout>,
     @InjectRepository(HealthMoodEntry)
@@ -78,7 +76,7 @@ export class HealthService {
         where: { user_id: userId, date: Between(start_date, end_date) },
         order: { date: 'ASC' },
       }),
-      this.getHabits(userId),
+      this.habitsService.listForUser(userId),
       this.workoutRepository.find({
         where: { user_id: userId, date: Between(start_date, end_date) },
         order: { date: 'DESC', created_at: 'DESC' },
@@ -126,7 +124,7 @@ export class HealthService {
       ),
       weight_log: weightLog.map((entry) => this.serializeWeight(entry)),
       daily_history: dailyHistory.map((entry) => this.serializeDailyMetric(entry)),
-      habits: habits.map((habit) => this.serializeHabit(habit)),
+      habits: habits.map((habit) => this.habitsService.serializeHabit(habit)),
       workouts: workouts.map((workout) => this.serializeWorkout(workout)),
       mood_entries: moodEntries.map((entry) => this.serializeMood(entry)),
       mood_today: moodToday
@@ -316,46 +314,6 @@ export class HealthService {
     return this.serializeWeight(saved);
   }
 
-  async toggleHabit(userId: string, habitId: string) {
-    const habit = await this.findOwnedHabit(userId, habitId);
-    habit.completed = !habit.completed;
-    const saved = await this.habitRepository.save(habit);
-    return this.serializeHabit(saved);
-  }
-
-  async createHabit(userId: string, dto: CreateHabitDto) {
-    const habit = this.habitRepository.create({
-      user_id: userId,
-      name: dto.name,
-      frequency: dto.frequency ?? 'daily',
-      target: dto.target ?? 1,
-      current: 0,
-      streak: 0,
-      completed: false,
-    });
-    const saved = await this.habitRepository.save(habit);
-    return this.serializeHabit(saved);
-  }
-
-  async updateHabit(userId: string, habitId: string, dto: UpdateHabitDto) {
-    const habit = await this.findOwnedHabit(userId, habitId);
-    if (dto.name !== undefined) {
-      const name = dto.name.trim();
-      if (!name) throw new BadRequestException('Habit name is required');
-      habit.name = name;
-    }
-    if (dto.frequency !== undefined) habit.frequency = dto.frequency;
-    if (dto.target !== undefined) habit.target = dto.target;
-    const saved = await this.habitRepository.save(habit);
-    return this.serializeHabit(saved);
-  }
-
-  async deleteHabit(userId: string, habitId: string) {
-    const habit = await this.findOwnedHabit(userId, habitId);
-    await this.habitRepository.remove(habit);
-    return { success: true };
-  }
-
   async createWorkout(userId: string, dto: CreateWorkoutDto) {
     const workout = this.workoutRepository.create({
       user_id: userId,
@@ -425,21 +383,6 @@ export class HealthService {
     return metric;
   }
 
-  private async getHabits(userId: string) {
-    return this.habitRepository.find({
-      where: { user_id: userId },
-      order: { created_at: 'ASC' },
-    });
-  }
-
-  private async findOwnedHabit(userId: string, habitId: string) {
-    const habit = await this.habitRepository.findOne({
-      where: { id: habitId, user_id: userId },
-    });
-    if (!habit) throw new NotFoundException('Habit not found');
-    return habit;
-  }
-
   private resolveDateRange(filter: HealthFilterDto) {
     const start = filter.start_date;
     const end = filter.end_date;
@@ -461,7 +404,7 @@ export class HealthService {
   private computeHealthScore(
     settings: HealthSettings,
     today: HealthDailyMetric,
-    habits: HealthHabit[],
+    habits: Habit[],
   ) {
     const waterScore = settings.water_glasses_target
       ? Math.min(
@@ -495,7 +438,7 @@ export class HealthService {
   }
 
   private computeSummary(
-    habits: HealthHabit[],
+    habits: Habit[],
     dailyHistory: HealthDailyMetric[],
     workouts: HealthWorkout[],
   ) {
@@ -638,18 +581,6 @@ export class HealthService {
       water_glasses: entry.water_glasses,
       sleep_hours: Number(entry.sleep_hours),
       exercise_minutes: entry.exercise_minutes,
-    };
-  }
-
-  private serializeHabit(habit: HealthHabit) {
-    return {
-      id: habit.id,
-      name: habit.name,
-      streak: habit.streak,
-      target: Number(habit.target),
-      current: Number(habit.current),
-      completed: habit.completed,
-      frequency: habit.frequency,
     };
   }
 

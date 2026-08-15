@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { HabitsModule } from '../habits/habits.module';
 import { HealthDailyMetric } from './entities/health-daily-metric.entity';
-import { HealthHabit } from './entities/health-habit.entity';
 import { HealthMoodEntry } from './entities/health-mood-entry.entity';
 import { HealthSettings } from './entities/health-settings.entity';
 import { HealthSleepSession } from './entities/health-sleep-session.entity';
@@ -12,11 +12,11 @@ import { HealthService } from './health.service';
 
 @Module({
   imports: [
+    HabitsModule,
     TypeOrmModule.forFeature([
       HealthSettings,
       HealthDailyMetric,
       HealthWeightEntry,
-      HealthHabit,
       HealthWorkout,
       HealthMoodEntry,
       HealthSleepSession,
