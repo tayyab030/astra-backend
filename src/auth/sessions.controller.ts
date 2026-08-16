@@ -16,7 +16,7 @@ export class SessionsController {
 
   @Get(['', '/'])
   listSessions(@Req() req: AuthenticatedRequest) {
-    return this.authService.listSessions(req.user!.sub);
+    return this.authService.listSessions(req.user!.sub, req.user!.sid);
   }
 
   @Delete([':id', ':id/'])

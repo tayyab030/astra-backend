@@ -56,7 +56,7 @@ const OTP_TTL_MS = 5 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000;
 const ACCOUNT_DELETE_TTL_MS = 20 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
-const ACCESS_TOKEN_TTL = '60m';
+const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL = '7d';
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const EMAIL_LIKE_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
@@ -221,9 +221,9 @@ export class AuthService {
     return this.serializeUser(saved);
   }
 
-  private signAccessToken(user: User) {
+  private signAccessToken(user: User, sessionId: string) {
     return jwt.sign(
-      { sub: user.id, email: user.email, typ: 'access' },
+      { sub: user.id, email: user.email, typ: 'access', sid: sessionId },
       this.getJwtSecret(),
       { expiresIn: ACCESS_TOKEN_TTL },
     );
@@ -263,7 +263,11 @@ export class AuthService {
     return 'Astra website';
   }
 
-  private serializeSession(session: AuthSession, currentJti?: string | null) {
+  private serializeSession(
+    session: AuthSession,
+    currentJti?: string | null,
+    currentSessionId?: string | null,
+  ) {
     return {
       id: session.id,
       client_type: session.client_type,
@@ -274,7 +278,10 @@ export class AuthService {
       created_at: session.created_at.toISOString(),
       last_seen_at: (session.last_seen_at ?? session.created_at).toISOString(),
       expires_at: session.expires_at.toISOString(),
-      is_current: Boolean(currentJti && session.jti === currentJti),
+      is_current: Boolean(
+        (currentSessionId && session.id === currentSessionId) ||
+          (currentJti && session.jti === currentJti),
+      ),
     };
   }
 
@@ -721,7 +728,7 @@ export class AuthService {
     const { session, refresh } = await this.createAuthSession(user, dto, meta);
 
     return {
-      access: this.signAccessToken(user),
+      access: this.signAccessToken(user, session.id),
       refresh,
       session_id: session.id,
       user: this.serializeUser(user),
@@ -794,16 +801,22 @@ export class AuthService {
       await this.sessionRepository.save(session);
 
       return {
-        access: this.signAccessToken(user),
+        access: this.signAccessToken(user, session.id),
         session_id: session.id,
       };
     }
 
-    // Legacy refresh tokens (no jti) still work until they expire.
-    return { access: this.signAccessToken(user) };
+    // Legacy refresh tokens (no jti): mint a real session so device list + revoke work.
+    const { session, refresh } = await this.createAuthSession(user, dto, meta);
+    return {
+      access: this.signAccessToken(user, session.id),
+      refresh,
+      session_id: session.id,
+      rotated_refresh: true,
+    };
   }
 
-  async listSessions(userId: string) {
+  async listSessions(userId: string, currentSessionId?: string | null) {
     const now = new Date();
     await this.enforceSingleWebSession(userId);
 
@@ -818,7 +831,9 @@ export class AuthService {
 
     return {
       count: active.length,
-      sessions: active.map((s) => this.serializeSession(s)),
+      sessions: active.map((s) =>
+        this.serializeSession(s, undefined, currentSessionId),
+      ),
     };
   }
 
@@ -854,33 +869,58 @@ export class AuthService {
     return { message: 'All sessions revoked', revoked };
   }
 
-  verifyAccessToken(token: string) {
+  async verifyAccessToken(token: string) {
     const secret = this.getJwtSecret();
 
+    let payload: jwt.JwtPayload;
     try {
       const decoded = jwt.verify(token, secret);
       if (typeof decoded === 'string') {
         throw new Error('Invalid token');
       }
-      const payload = decoded as jwt.JwtPayload;
+      payload = decoded as jwt.JwtPayload;
       if (payload.typ !== 'access' || typeof payload.sub !== 'string') {
         throw new Error('Invalid token type');
       }
-
-      return {
-        sub: payload.sub,
-        email: typeof payload.email === 'string' ? payload.email : '',
-      };
     } catch {
       throw new UnauthorizedException({
         detail: 'Token is invalid or expired',
         code: 'token_not_valid',
       });
     }
+
+    const sessionId = typeof payload.sid === 'string' ? payload.sid : null;
+    if (!sessionId) {
+      // Pre-session access tokens cannot be revoked remotely — force re-login.
+      throw new UnauthorizedException({
+        detail: 'Session expired. Please sign in again.',
+        code: 'session_required',
+      });
+    }
+
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId, user_id: payload.sub },
+    });
+    if (
+      !session ||
+      session.revoked_at ||
+      session.expires_at.getTime() <= Date.now()
+    ) {
+      throw new UnauthorizedException({
+        detail: 'Session revoked or expired. Please sign in again.',
+        code: 'session_revoked',
+      });
+    }
+
+    return {
+      sub: payload.sub,
+      email: typeof payload.email === 'string' ? payload.email : '',
+      sid: session.id,
+    };
   }
 
   async jwtVerify(dto: JwtVerifyDto) {
-    this.verifyAccessToken(dto.token);
+    await this.verifyAccessToken(dto.token);
     return {};
   }
 

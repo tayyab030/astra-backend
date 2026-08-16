@@ -25,7 +25,7 @@ function extractAccessToken(req: AuthenticatedRequest): string | undefined {
 export class RequireAuthMiddleware implements NestMiddleware {
   constructor(private readonly authService: AuthService) {}
 
-  use(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  async use(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     const url = req.originalUrl ?? req.url;
     if (!routeRequiresAuth(url)) {
       return next();
@@ -40,7 +40,7 @@ export class RequireAuthMiddleware implements NestMiddleware {
     }
 
     try {
-      req.user = this.authService.verifyAccessToken(token);
+      req.user = await this.authService.verifyAccessToken(token);
       return next();
     } catch (error) {
       if (error instanceof UnauthorizedException) {
