@@ -313,10 +313,71 @@ export class AuthService {
     });
     await this.sessionRepository.save(session);
 
+    // Website: one active browser login at a time — revoke older web sessions
+    // so their refresh tokens stop working (forces logout on other tabs/browsers).
+    if (clientType === 'web') {
+      await this.revokeOtherSessionsOfType(user.id, 'web', session.id);
+    }
+
     return {
       session,
       refresh: this.signRefreshToken(user, jti),
     };
+  }
+
+  /**
+   * Keep a single active session per client type (used for Website).
+   * Revokes every other non-expired session of that type for the user.
+   */
+  private async revokeOtherSessionsOfType(
+    userId: string,
+    clientType: AuthClientType,
+    keepSessionId: string,
+  ) {
+    const now = new Date();
+    const others = await this.sessionRepository.find({
+      where: {
+        user_id: userId,
+        client_type: clientType,
+      },
+    });
+
+    let changed = 0;
+    for (const session of others) {
+      if (session.id === keepSessionId) continue;
+      if (session.revoked_at) continue;
+      if (session.expires_at.getTime() <= now.getTime()) continue;
+      session.revoked_at = now;
+      changed += 1;
+    }
+
+    if (changed > 0) {
+      await this.sessionRepository.save(others);
+    }
+    return changed;
+  }
+
+  /**
+   * If multiple Website sessions are still active (legacy), keep the newest
+   * by last_seen_at and revoke the rest so only one shows / stays signed in.
+   */
+  private async enforceSingleWebSession(userId: string) {
+    const now = new Date();
+    const webSessions = await this.sessionRepository.find({
+      where: { user_id: userId, client_type: 'web' },
+      order: { last_seen_at: 'DESC', created_at: 'DESC' },
+    });
+
+    const active = webSessions.filter(
+      (s) => !s.revoked_at && s.expires_at.getTime() > now.getTime(),
+    );
+    if (active.length <= 1) return;
+
+    const [, ...stale] = active;
+    for (const session of stale) {
+      session.revoked_at = now;
+    }
+    await this.sessionRepository.save(stale);
   }
 
   private generateOtp() {
@@ -744,6 +805,8 @@ export class AuthService {
 
   async listSessions(userId: string) {
     const now = new Date();
+    await this.enforceSingleWebSession(userId);
+
     const sessions = await this.sessionRepository.find({
       where: { user_id: userId },
       order: { last_seen_at: 'DESC', created_at: 'DESC' },
