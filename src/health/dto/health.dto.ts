@@ -10,6 +10,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class HealthFilterDto {
@@ -26,10 +27,20 @@ export class HealthFilterDto {
 
 export class UpdateHealthProfileDto {
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Number)
   @IsNumber()
   @Min(100)
   @Max(250)
   height_cm?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(30)
+  @Max(300)
+  ideal_weight_kg?: number | null;
 }
 
 export class UpdateHealthTargetsDto {

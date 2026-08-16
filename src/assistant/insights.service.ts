@@ -110,7 +110,22 @@ export class InsightsService {
       return this.emptyResult(kind, periodMeta, generatedAt, false);
     }
 
-    const cacheKey = `${userId}:${kind}:${periodMeta.period_key}:${aiSettingsFingerprint(user)}`;
+    const dataScope: AiDataScope = isAiDataScope(user.ai_data_scope)
+      ? user.ai_data_scope
+      : DEFAULT_AI_DATA_SCOPE;
+
+    const safeContext = this.sanitizeContext(context, dataScope);
+    const currency =
+      (typeof user.currency === 'string' && user.currency.trim()
+        ? user.currency.trim().toUpperCase()
+        : 'USD') || 'USD';
+    if (!safeContext.currency) {
+      safeContext.currency = currency;
+      safeContext.currency_code = currency;
+      safeContext.currency_instructions = `User currency is ${currency}. Write all money in ${currency}. Never use $ or USD unless currency is USD.`;
+    }
+    const contextFingerprint = this.contextFingerprint(safeContext);
+    const cacheKey = `${userId}:${kind}:${periodMeta.period_key}:${aiSettingsFingerprint(user)}:${contextFingerprint}`;
     const cached = this.cache.get(cacheKey);
     const untilMs = Date.parse(periodMeta.cache_until);
     if (
@@ -128,11 +143,6 @@ export class InsightsService {
       };
     }
 
-    const dataScope: AiDataScope = isAiDataScope(user.ai_data_scope)
-      ? user.ai_data_scope
-      : DEFAULT_AI_DATA_SCOPE;
-
-    const safeContext = this.sanitizeContext(context, dataScope);
     const system = insightSystemPrompt(kind, periodMeta);
     const userPrompt = insightUserPrompt(
       kind,
@@ -210,6 +220,19 @@ export class InsightsService {
       out[key] = value;
     }
     return out;
+  }
+
+  private contextFingerprint(context: Record<string, unknown>): string {
+    try {
+      const raw = JSON.stringify(context);
+      let hash = 0;
+      for (let i = 0; i < raw.length; i += 1) {
+        hash = (hash * 31 + raw.charCodeAt(i)) | 0;
+      }
+      return Math.abs(hash).toString(36);
+    } catch {
+      return 'ctx';
+    }
   }
 
   private parseAndNormalize(

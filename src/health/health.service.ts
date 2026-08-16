@@ -108,7 +108,12 @@ export class HealthService {
         ? Number(latestWeightEntry.weight_kg)
         : null,
       summary,
-      profile: { height_cm: settings.height_cm ? Number(settings.height_cm) : null },
+      profile: {
+        height_cm: settings.height_cm ? Number(settings.height_cm) : null,
+        ideal_weight_kg: settings.ideal_weight_kg
+          ? Number(settings.ideal_weight_kg)
+          : null,
+      },
       targets: {
         water_glasses: settings.water_glasses_target,
         sleep_hours: Number(settings.sleep_hours_target),
@@ -135,11 +140,65 @@ export class HealthService {
 
   async updateProfile(userId: string, dto: UpdateHealthProfileDto) {
     const settings = await this.getOrCreateSettings(userId);
+
     if (dto.height_cm !== undefined) {
       settings.height_cm = dto.height_cm;
     }
+
+    const heightCm =
+      settings.height_cm != null ? Number(settings.height_cm) : null;
+
+    if (dto.ideal_weight_kg !== undefined) {
+      if (dto.ideal_weight_kg === null) {
+        settings.ideal_weight_kg = null;
+      } else {
+        this.assertIdealWeightInHealthyRange(dto.ideal_weight_kg, heightCm);
+        settings.ideal_weight_kg = dto.ideal_weight_kg;
+      }
+    } else if (
+      dto.height_cm !== undefined &&
+      settings.ideal_weight_kg != null &&
+      heightCm != null
+    ) {
+      // Height changed — drop ideal if it no longer sits in the healthy band.
+      try {
+        this.assertIdealWeightInHealthyRange(
+          Number(settings.ideal_weight_kg),
+          heightCm,
+        );
+      } catch {
+        settings.ideal_weight_kg = null;
+      }
+    }
+
     const saved = await this.settingsRepository.save(settings);
-    return { height_cm: saved.height_cm ? Number(saved.height_cm) : null };
+    return {
+      height_cm: saved.height_cm ? Number(saved.height_cm) : null,
+      ideal_weight_kg: saved.ideal_weight_kg
+        ? Number(saved.ideal_weight_kg)
+        : null,
+    };
+  }
+
+  /** WHO healthy BMI 18.5–24.9 → weight band for a given height. */
+  private assertIdealWeightInHealthyRange(
+    idealWeightKg: number,
+    heightCm: number | null,
+  ) {
+    if (heightCm == null || heightCm <= 0) {
+      throw new BadRequestException(
+        'Add your height before setting an ideal weight',
+      );
+    }
+    const heightM = heightCm / 100;
+    const h2 = heightM * heightM;
+    const minKg = Math.round(18.5 * h2 * 10) / 10;
+    const maxKg = Math.round(24.9 * h2 * 10) / 10;
+    if (idealWeightKg < minKg || idealWeightKg > maxKg) {
+      throw new BadRequestException(
+        `Ideal weight must be within the healthy range (${minKg.toFixed(1)}–${maxKg.toFixed(1)} kg)`,
+      );
+    }
   }
 
   async updateTargets(userId: string, dto: UpdateHealthTargetsDto) {
@@ -357,6 +416,7 @@ export class HealthService {
       settings = this.settingsRepository.create({
         user_id: userId,
         height_cm: null,
+        ideal_weight_kg: null,
       });
       settings = await this.settingsRepository.save(settings);
     }

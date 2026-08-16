@@ -8,10 +8,12 @@ import { RequireAuthMiddleware } from './middleware/require-auth.middleware';
 import { MeController } from './me.controller';
 import { OtpController } from './otp.controller';
 import { PasswordController } from './password.controller';
+import { SessionsController } from './sessions.controller';
+import { AuthSession } from './entities/auth-session.entity';
 import { User } from './entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
+  imports: [TypeOrmModule.forFeature([User, AuthSession])],
   controllers: [
     AuthController,
     JwtController,
@@ -19,6 +21,7 @@ import { User } from './entities/user.entity';
     OtpController,
     PasswordController,
     AccountDeleteController,
+    SessionsController,
   ],
   providers: [AuthService, RequireAuthMiddleware],
   exports: [AuthService],

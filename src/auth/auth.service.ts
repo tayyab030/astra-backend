@@ -46,6 +46,10 @@ import {
   sendPasswordResetEmail,
 } from './email';
 import { User } from './entities/user.entity';
+import {
+  AuthSession,
+  type AuthClientType,
+} from './entities/auth-session.entity';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000;
@@ -53,7 +57,13 @@ const ACCOUNT_DELETE_TTL_MS = 20 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
 const ACCESS_TOKEN_TTL = '60m';
 const REFRESH_TOKEN_TTL = '7d';
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const EMAIL_LIKE_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+
+type ClientMeta = {
+  ipAddress?: string | null;
+  userAgent?: string | null;
+};
 
 /** Tables keyed by user_id — delete before removing the user row. */
 const USER_DATA_TABLES = [
@@ -77,6 +87,7 @@ const USER_DATA_TABLES = [
   'wealth_category_budgets',
   'wealth_savings',
   'wealth_transactions',
+  'auth_sessions',
 ] as const;
 
 @Injectable()
@@ -84,6 +95,8 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(AuthSession)
+    private readonly sessionRepository: Repository<AuthSession>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -215,12 +228,94 @@ export class AuthService {
     );
   }
 
-  private signRefreshToken(user: User) {
+  private signRefreshToken(user: User, jti: string) {
     return jwt.sign(
-      { sub: user.id, typ: 'refresh' },
+      { sub: user.id, typ: 'refresh', jti },
       this.getJwtSecret(),
       { expiresIn: REFRESH_TOKEN_TTL },
     );
+  }
+
+  private normalizeClientType(value?: string | null): AuthClientType {
+    if (value === 'mobile' || value === 'desktop' || value === 'web') {
+      return value;
+    }
+    return 'web';
+  }
+
+  private buildDeviceLabel(input: {
+    clientType: AuthClientType;
+    platform?: string | null;
+    deviceLabel?: string | null;
+    userAgent?: string | null;
+  }) {
+    if (input.deviceLabel?.trim()) return input.deviceLabel.trim().slice(0, 128);
+
+    const platform = (input.platform || '').trim();
+    if (input.clientType === 'mobile') {
+      return platform ? `${platform} · Astra app` : 'Astra mobile app';
+    }
+    if (input.clientType === 'desktop') {
+      return platform ? `${platform} · Astra desktop` : 'Astra desktop';
+    }
+    if (platform) return `${platform} · Website`;
+    return 'Astra website';
+  }
+
+  private serializeSession(session: AuthSession, currentJti?: string | null) {
+    return {
+      id: session.id,
+      client_type: session.client_type,
+      platform: session.platform,
+      device_label: session.device_label,
+      user_agent: session.user_agent,
+      ip_address: session.ip_address,
+      created_at: session.created_at.toISOString(),
+      last_seen_at: (session.last_seen_at ?? session.created_at).toISOString(),
+      expires_at: session.expires_at.toISOString(),
+      is_current: Boolean(currentJti && session.jti === currentJti),
+    };
+  }
+
+  private async createAuthSession(
+    user: User,
+    dto: {
+      client_type?: string;
+      platform?: string;
+      device_label?: string;
+      user_agent?: string;
+    },
+    meta: ClientMeta,
+  ) {
+    const jti = randomUUID();
+    const clientType = this.normalizeClientType(dto.client_type);
+    const userAgent = (dto.user_agent || meta.userAgent || null)?.slice(0, 512) ?? null;
+    const platform = dto.platform?.trim().slice(0, 32) || null;
+    const deviceLabel = this.buildDeviceLabel({
+      clientType,
+      platform,
+      deviceLabel: dto.device_label,
+      userAgent,
+    });
+
+    const session = this.sessionRepository.create({
+      user_id: user.id,
+      jti,
+      client_type: clientType,
+      platform,
+      device_label: deviceLabel,
+      user_agent: userAgent,
+      ip_address: meta.ipAddress?.slice(0, 64) || null,
+      expires_at: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      revoked_at: null,
+      last_seen_at: new Date(),
+    });
+    await this.sessionRepository.save(session);
+
+    return {
+      session,
+      refresh: this.signRefreshToken(user, jti),
+    };
   }
 
   private generateOtp() {
@@ -502,7 +597,7 @@ export class AuthService {
     };
   }
 
-  async jwtCreate(dto: JwtCreateDto) {
+  async jwtCreate(dto: JwtCreateDto, meta: ClientMeta = {}) {
     const user = await this.findUserByLogin(dto.login);
     if (!user) {
       throw new UnauthorizedException({
@@ -531,14 +626,17 @@ export class AuthService {
       });
     }
 
+    const { session, refresh } = await this.createAuthSession(user, dto, meta);
+
     return {
       access: this.signAccessToken(user),
-      refresh: this.signRefreshToken(user),
+      refresh,
+      session_id: session.id,
       user: this.serializeUser(user),
     };
   }
 
-  async jwtRefresh(dto: JwtRefreshDto) {
+  async jwtRefresh(dto: JwtRefreshDto, meta: ClientMeta = {}) {
     const secret = this.getJwtSecret();
     let payload: jwt.JwtPayload;
 
@@ -572,7 +670,94 @@ export class AuthService {
       });
     }
 
+    const jti = typeof payload.jti === 'string' ? payload.jti : null;
+    if (jti) {
+      const session = await this.sessionRepository.findOne({ where: { jti } });
+      if (!session || session.user_id !== user.id) {
+        throw new UnauthorizedException({
+          detail: 'Token is invalid or expired',
+          code: 'token_not_valid',
+        });
+      }
+      if (session.revoked_at || session.expires_at.getTime() <= Date.now()) {
+        throw new UnauthorizedException({
+          detail: 'Token is invalid or expired',
+          code: 'token_not_valid',
+        });
+      }
+
+      session.last_seen_at = new Date();
+      if (dto.client_type) {
+        session.client_type = this.normalizeClientType(dto.client_type);
+      }
+      if (dto.platform?.trim()) {
+        session.platform = dto.platform.trim().slice(0, 32);
+      }
+      if (dto.device_label?.trim()) {
+        session.device_label = dto.device_label.trim().slice(0, 128);
+      }
+      const ua = dto.user_agent || meta.userAgent;
+      if (ua) session.user_agent = ua.slice(0, 512);
+      if (meta.ipAddress) session.ip_address = meta.ipAddress.slice(0, 64);
+      await this.sessionRepository.save(session);
+
+      return {
+        access: this.signAccessToken(user),
+        session_id: session.id,
+      };
+    }
+
+    // Legacy refresh tokens (no jti) still work until they expire.
     return { access: this.signAccessToken(user) };
+  }
+
+  async listSessions(userId: string) {
+    const now = new Date();
+    const sessions = await this.sessionRepository.find({
+      where: { user_id: userId },
+      order: { last_seen_at: 'DESC', created_at: 'DESC' },
+    });
+
+    const active = sessions.filter(
+      (s) => !s.revoked_at && s.expires_at.getTime() > now.getTime(),
+    );
+
+    return {
+      count: active.length,
+      sessions: active.map((s) => this.serializeSession(s)),
+    };
+  }
+
+  async revokeSession(userId: string, sessionId: string) {
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId, user_id: userId },
+    });
+    if (!session) {
+      throw new NotFoundException({ detail: 'Session not found' });
+    }
+    if (!session.revoked_at) {
+      session.revoked_at = new Date();
+      await this.sessionRepository.save(session);
+    }
+    return { message: 'Session revoked', id: session.id };
+  }
+
+  async revokeAllSessions(userId: string) {
+    const now = new Date();
+    const sessions = await this.sessionRepository.find({
+      where: { user_id: userId },
+    });
+    let revoked = 0;
+    for (const session of sessions) {
+      if (!session.revoked_at && session.expires_at.getTime() > now.getTime()) {
+        session.revoked_at = now;
+        revoked += 1;
+      }
+    }
+    if (revoked > 0) {
+      await this.sessionRepository.save(sessions);
+    }
+    return { message: 'All sessions revoked', revoked };
   }
 
   verifyAccessToken(token: string) {

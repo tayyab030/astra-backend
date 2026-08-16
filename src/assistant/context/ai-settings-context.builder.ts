@@ -27,6 +27,7 @@ export type AiSettingsSource = {
   ai_voice_mode?: boolean | null;
   ai_voice?: string | null;
   ai_language?: string | null;
+  currency?: string | null;
 };
 
 export type ResolvedAiSettings = {
@@ -67,9 +68,10 @@ export function resolveAiSettings(user: AiSettingsSource): ResolvedAiSettings {
   };
 }
 
-/** Cache key so quotes/insights regenerate when Settings → AI changes. */
+/** Cache key so quotes/insights regenerate when Settings → AI or currency change. */
 export function aiSettingsFingerprint(user: AiSettingsSource): string {
   const s = resolveAiSettings(user);
+  const currency = (user.currency || 'USD').trim().toUpperCase() || 'USD';
   return [
     s.personality,
     s.dataScope,
@@ -77,19 +79,20 @@ export function aiSettingsFingerprint(user: AiSettingsSource): string {
     s.insights ? '1' : '0',
     s.voice,
     s.voiceMode ? '1' : '0',
+    currency,
   ].join(':');
 }
 
 function surfaceMandate(surface: AiSurface): string {
   switch (surface) {
     case 'conversation':
-      return 'Surface: conversation. Apply every rule below to this chat reply.';
+      return 'Surface: conversation. Apply every rule below to this chat reply — language, personality, currency, insights toggle, and data scope.';
     case 'quote':
-      return 'Surface: quote. Return only the quote text, but personality, language, and tone MUST still match the rules below.';
+      return 'Surface: quote. Return only the quote text, but personality, language, tone, and currency wording MUST still match the rules below.';
     case 'insight':
-      return 'Surface: insight. JSON schema still applies, but every human-readable string MUST follow personality, language, and data scope below.';
+      return 'Surface: insight. JSON schema still applies, but every human-readable string MUST follow personality, language, preferred currency, and data scope below.';
     default:
-      return 'Surface: Astra AI output. Apply every rule below no matter the format.';
+      return 'Surface: Astra AI output. Apply every Settings rule below no matter the format (language, personality, currency, insights, data scope).';
   }
 }
 
@@ -102,6 +105,9 @@ export function buildStrictAiRulesBlock(
   surface: AiSurface = 'generic',
 ): string {
   const s = resolveAiSettings(user);
+  const currency = (user.currency || 'USD').trim().toUpperCase() || 'USD';
+  const moneyExample =
+    currency === 'USD' ? '$21' : currency === 'EUR' ? '€21' : `${currency} 23`;
 
   return [
     'STRICT AI RULES (mandatory, non-negotiable).',
@@ -113,6 +119,9 @@ export function buildStrictAiRulesBlock(
     languageReplyGuidance(s.language),
     `Personality: ${s.personality}`,
     personalityGuidance(s.personality),
+    `Preferred currency: ${currency}.`,
+    `Always state money in ${currency} only (example style: ${moneyExample}). Never use $ or USD unless preferred currency is USD.`,
+    'If context includes formatted money strings, prefer those exact strings.',
     `Smart insights: ${s.insights ? 'on' : 'off'}`,
     s.insights
       ? 'When relevant, offer brief useful suggestions or analysis unprompted (quotes stay a single quote).'

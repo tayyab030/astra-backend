@@ -7,6 +7,7 @@ import {
 } from './ai-settings-context.builder';
 import { buildUserContextBlock } from './user-context.builder';
 import { buildWealthContextBlock } from './wealth-context.builder';
+import { fetchUsdExchangeRates } from '../constants/currency';
 
 @Injectable()
 export class AssistantContextService {
@@ -35,7 +36,8 @@ export class AssistantContextService {
           });
           const currency =
             (user.currency || 'USD').trim().toUpperCase() || 'USD';
-          parts.push(buildWealthContextBlock(dashboard, currency));
+          const rates = await fetchUsdExchangeRates();
+          parts.push(buildWealthContextBlock(dashboard, currency, rates));
         } catch (error) {
           this.logger.warn(
             `Wealth context skipped for ${userId}: ${
