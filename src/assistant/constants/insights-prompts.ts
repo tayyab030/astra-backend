@@ -34,7 +34,7 @@ const JSON_ONLY =
   'Return ONLY valid JSON matching the schema. No markdown, no code fences, no preamble.';
 
 const LIFESTYLE_COACHING = [
-  'Tone: caring Jarvis-style aide — calm, precise, look-after-yourself (never claim to be Jarvis).',
+  'Follow STRICT AI RULES for personality and language — do not override them with a default Jarvis tone.',
   'When live stats support it, coach on lifestyle: overwork and rest, sleep too little/too much or off-schedule, trips/dining (hope they enjoy), and overspending on food & dine (gently urge cutting back).',
   `Ideal sleep window: use context ideal_sleep (or bedtime/wake targets) if present; otherwise assume ${DEFAULT_IDEAL_SLEEP.label} (~${DEFAULT_IDEAL_SLEEP.hours}h).`,
   'When sleep sessions or hours exist, comment on both duration and timing vs that window (e.g. late bedtime, short night, oversleeping past wake).',
@@ -45,14 +45,11 @@ const HORIZON_FIELD =
 
 export function insightSystemPrompt(
   kind: InsightKind,
-  personalityTone: string,
-  scopeGuidance: string,
   periodMeta: InsightPeriodMeta,
 ): string {
   const base = [
     "You are Astra, a personal life OS AI that writes short, specific insights from the user's live stats.",
-    personalityTone,
-    scopeGuidance,
+    'STRICT AI RULES (personality, language, data scope) override any default tone in this prompt.',
     periodPromptGuidance(periodMeta),
     LIFESTYLE_COACHING,
     'Use only the provided context. Do not invent exact dollar amounts, dates, or counts that are not in the context.',

@@ -34,7 +34,7 @@ export class AssistantController {
     if (!req.user?.sub) {
       throw new UnauthorizedException({ detail: 'Authentication required.' });
     }
-    return this.assistantService.getDailyQuote();
+    return this.assistantService.getDailyQuote(req.user.sub);
   }
 
   @Get(['goals-quote', 'goals-quote/'])
@@ -42,7 +42,7 @@ export class AssistantController {
     if (!req.user?.sub) {
       throw new UnauthorizedException({ detail: 'Authentication required.' });
     }
-    return this.assistantService.getGoalsQuote();
+    return this.assistantService.getGoalsQuote(req.user.sub);
   }
 
   @Post(['insights', 'insights/'])

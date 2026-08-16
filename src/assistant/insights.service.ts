@@ -2,13 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import {
   DEFAULT_AI_DATA_SCOPE,
-  DEFAULT_AI_PERSONALITY,
-  dataScopeGuidance,
   isAiDataScope,
-  isAiPersonality,
-  personalityGuidance,
   type AiDataScope,
 } from '../auth/constants/ai-settings';
+import {
+  aiSettingsFingerprint,
+  buildStrictAiRulesBlock,
+} from './context/ai-settings-context.builder';
 import {
   DEFAULT_INSIGHT_PERIOD,
   isInsightHorizon,
@@ -110,7 +110,7 @@ export class InsightsService {
       return this.emptyResult(kind, periodMeta, generatedAt, false);
     }
 
-    const cacheKey = `${userId}:${kind}:${periodMeta.period_key}`;
+    const cacheKey = `${userId}:${kind}:${periodMeta.period_key}:${aiSettingsFingerprint(user)}`;
     const cached = this.cache.get(cacheKey);
     const untilMs = Date.parse(periodMeta.cache_until);
     if (
@@ -128,20 +128,12 @@ export class InsightsService {
       };
     }
 
-    const personality = isAiPersonality(user.ai_personality)
-      ? user.ai_personality
-      : DEFAULT_AI_PERSONALITY;
     const dataScope: AiDataScope = isAiDataScope(user.ai_data_scope)
       ? user.ai_data_scope
       : DEFAULT_AI_DATA_SCOPE;
 
     const safeContext = this.sanitizeContext(context, dataScope);
-    const system = insightSystemPrompt(
-      kind,
-      personalityGuidance(personality),
-      dataScopeGuidance(dataScope),
-      periodMeta,
-    );
+    const system = insightSystemPrompt(kind, periodMeta);
     const userPrompt = insightUserPrompt(
       kind,
       JSON.stringify(safeContext).slice(0, 6000),
@@ -150,6 +142,7 @@ export class InsightsService {
 
     try {
       const raw = await this.groqChat.completePrompt({
+        strictRules: buildStrictAiRulesBlock(user, 'insight'),
         system,
         user: userPrompt,
         temperature: 0.6,

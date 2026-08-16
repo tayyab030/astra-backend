@@ -37,6 +37,7 @@ function buildPrivacyBoundary(userId: string) {
 
 @Injectable()
 export class GroqChatService {
+  /** Chat replies. `context` must include STRICT AI RULES from buildStrictAiRulesBlock. */
   async complete(options: {
     userId: string;
     history: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -92,14 +93,24 @@ export class GroqChatService {
     return content;
   }
 
-  /** One-off prompt (no Astra chat history / user context). */
+  /**
+   * One-off prompt (quotes, insights, future AI features).
+   * Always pass `strictRules` from buildStrictAiRulesBlock so Settings → AI apply.
+   */
   async completePrompt(options: {
     system: string;
     user: string;
     temperature?: number;
     maxTokens?: number;
+    strictRules?: string | null;
   }): Promise<string> {
     const apiKey = assertGroqApiKey();
+    const messages: GroqChatMessage[] = [];
+    if (options.strictRules?.trim()) {
+      messages.push({ role: 'system', content: options.strictRules.trim() });
+    }
+    messages.push({ role: 'system', content: options.system });
+    messages.push({ role: 'user', content: options.user });
 
     let response: Response;
     try {
@@ -111,10 +122,7 @@ export class GroqChatService {
         },
         body: JSON.stringify({
           model: GROQ_CHAT_MODEL,
-          messages: [
-            { role: 'system', content: options.system },
-            { role: 'user', content: options.user },
-          ],
+          messages,
           temperature: options.temperature ?? 0.9,
           max_tokens: options.maxTokens ?? 80,
         }),
