@@ -41,6 +41,7 @@ import {
 } from './constants/module-settings';
 import { getCurrencyForCountry, getTimezoneForCountry } from './constants/country-currency';
 import {
+  isEmailFlowEnabled,
   sendAccountDeleteEmail,
   sendOtpEmail,
   sendPasswordResetEmail,
@@ -473,6 +474,16 @@ export class AuthService {
       module_settings: DEFAULT_MODULE_SETTINGS,
     });
     const saved = await this.userRepository.save(user);
+
+    // TEMPORARY_EMAIL_FLOW — when MODE !== local, skip OTP email and auto-verify.
+    // Revert: always call issueOtp(saved) and return otp_token (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      saved.is_verified = true;
+      saved.verified_at = new Date();
+      await this.userRepository.save(saved);
+      return { message: 'Registration successful' };
+    }
+
     const withOtp = await this.issueOtp(saved);
 
     return {
@@ -547,6 +558,16 @@ export class AuthService {
   }
 
   async resendOtp(dto: ResendOtpDto) {
+    // TEMPORARY_EMAIL_FLOW — OTP email disabled when MODE !== local.
+    // Revert: delete this early return (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      throw new BadRequestException({
+        non_field_errors: [
+          'Email verification is temporarily disabled in this environment.',
+        ],
+      });
+    }
+
     const user = await this.userRepository.findOne({
       where: { id: dto.user_id },
     });
@@ -573,6 +594,16 @@ export class AuthService {
   }
 
   async resendOtpFromLogin(dto: ResendOtpLoginDto) {
+    // TEMPORARY_EMAIL_FLOW — OTP email disabled when MODE !== local.
+    // Revert: delete this early return (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      throw new BadRequestException({
+        non_field_errors: [
+          'Email verification is temporarily disabled in this environment.',
+        ],
+      });
+    }
+
     const user = await this.findUserByLoginAndPassword(dto.login, dto.password);
 
     if (user.is_verified) {
@@ -790,29 +821,33 @@ export class AuthService {
     return {};
   }
 
-  async requestPasswordReset(dto: ForgotPasswordDto) {
-    const email = dto.email.trim().toLowerCase();
-    const user = await this.userRepository.findOne({ where: { email } });
-
-    if (!user) {
-      return {
-        message:
-          'If an account exists with that email, a reset link has been sent.',
-        sent: true,
-      };
-    }
-
+  /**
+   * Shared password-reset issuance for login (forgot) and settings.
+   * TEMPORARY_EMAIL_FLOW: when MODE !== local, skip email and return reset_token
+   * so the client can open the reset form directly. Revert by always sending
+   * email and never returning reset_token (search TEMPORARY_EMAIL_FLOW).
+   */
+  private async completePasswordResetRequest(user: User) {
     if (this.isPasswordResetStillValid(user)) {
       const remainingMs =
         user.password_reset_expires_at!.getTime() - Date.now();
+      const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+
+      // TEMPORARY_EMAIL_FLOW — return existing token when email is off
+      if (!isEmailFlowEnabled()) {
+        return {
+          message: 'A recovery session is still valid. Continue to set a new password.',
+          sent: false,
+          reset_token: user.password_reset_token,
+          remaining_time_seconds: remainingSeconds,
+        };
+      }
+
       return {
         message:
           'A recovery link was already sent and is still valid. Check your inbox.',
         sent: false,
-        remaining_time_seconds: Math.max(
-          0,
-          Math.floor(remainingMs / 1000),
-        ),
+        remaining_time_seconds: remainingSeconds,
       };
     }
 
@@ -821,6 +856,16 @@ export class AuthService {
       Date.now() + PASSWORD_RESET_TTL_MS,
     );
     await this.userRepository.save(user);
+
+    // TEMPORARY_EMAIL_FLOW — skip email; client uses reset_token (login + settings)
+    if (!isEmailFlowEnabled()) {
+      return {
+        message: 'Password reset ready. Continue to set a new password.',
+        sent: false,
+        reset_token: user.password_reset_token,
+        remaining_time_seconds: Math.floor(PASSWORD_RESET_TTL_MS / 1000),
+      };
+    }
 
     const frontendUrl =
       process.env.FRONTEND_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
@@ -832,6 +877,39 @@ export class AuthService {
         'If an account exists with that email, a reset link has been sent.',
       sent: true,
     };
+  }
+
+  async requestPasswordReset(dto: ForgotPasswordDto) {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      // TEMPORARY_EMAIL_FLOW — keep response vague; no email to send anyway
+      if (!isEmailFlowEnabled()) {
+        return {
+          message:
+            'If an account exists with that email, you can reset your password.',
+          sent: false,
+        };
+      }
+
+      return {
+        message:
+          'If an account exists with that email, a reset link has been sent.',
+        sent: true,
+      };
+    }
+
+    return this.completePasswordResetRequest(user);
+  }
+
+  /** Settings: start password reset for the signed-in user (same TEMPORARY_EMAIL_FLOW). */
+  async requestPasswordResetForAuthenticatedUser(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException({ detail: 'User not found.' });
+    }
+    return this.completePasswordResetRequest(user);
   }
 
   async getPasswordResetStatus(token: string) {
@@ -886,6 +964,20 @@ export class AuthService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException({ detail: 'User not found.' });
+    }
+
+    // TEMPORARY_EMAIL_FLOW — when MODE !== local, skip confirmation email and delete now.
+    // Revert: remove this block so deletion always goes through email confirm
+    // (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      const email = user.email;
+      await this.wipeAllUserData(user.id);
+      return {
+        message:
+          'Your account and all related data have been permanently deleted.',
+        email,
+        sent: false,
+      };
     }
 
     if (this.isAccountDeleteStillValid(user)) {

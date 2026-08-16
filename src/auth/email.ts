@@ -18,6 +18,20 @@ type SendAccountDeleteEmailInput = {
 
 const logger = new Logger('EmailService');
 
+/**
+ * TEMPORARY_EMAIL_FLOW — revert marker (search: TEMPORARY_EMAIL_FLOW)
+ *
+ * Email is only sent when MODE=local. In all other modes, callers skip the
+ * email-dependent UX (OTP verify, reset link, delete confirmation link).
+ *
+ * To restore permanent email everywhere:
+ * 1. Delete this helper (and its early-returns in send* below).
+ * 2. Remove the TEMPORARY_EMAIL_FLOW branches in auth.service.ts.
+ */
+export function isEmailFlowEnabled(): boolean {
+  return process.env.MODE?.toLowerCase() === 'local';
+}
+
 function getEnv(name: string) {
   return process.env[name];
 }
@@ -31,6 +45,12 @@ export async function sendOtpEmail({
   to,
   otp,
 }: SendOtpEmailInput): Promise<boolean> {
+  // TEMPORARY_EMAIL_FLOW — remove this block when restoring email in all modes
+  if (!isEmailFlowEnabled()) {
+    logger.warn('TEMPORARY_EMAIL_FLOW: MODE is not local — skipping OTP email');
+    return false;
+  }
+
   const host = getEnv('SMTP_HOST');
   const portRaw = getEnv('SMTP_PORT') ?? '587';
   const user = getEnv('SMTP_USER');
@@ -83,6 +103,14 @@ export async function sendPasswordResetEmail({
   to,
   resetUrl,
 }: SendPasswordResetEmailInput): Promise<boolean> {
+  // TEMPORARY_EMAIL_FLOW — remove this block when restoring email in all modes
+  if (!isEmailFlowEnabled()) {
+    logger.warn(
+      'TEMPORARY_EMAIL_FLOW: MODE is not local — skipping password reset email',
+    );
+    return false;
+  }
+
   const host = getEnv('SMTP_HOST');
   const portRaw = getEnv('SMTP_PORT') ?? '587';
   const user = getEnv('SMTP_USER');
@@ -138,6 +166,14 @@ export async function sendAccountDeleteEmail({
   to,
   deleteUrl,
 }: SendAccountDeleteEmailInput): Promise<boolean> {
+  // TEMPORARY_EMAIL_FLOW — remove this block when restoring email in all modes
+  if (!isEmailFlowEnabled()) {
+    logger.warn(
+      'TEMPORARY_EMAIL_FLOW: MODE is not local — skipping account delete email',
+    );
+    return false;
+  }
+
   const host = getEnv('SMTP_HOST');
   const portRaw = getEnv('SMTP_PORT') ?? '587';
   const user = getEnv('SMTP_USER');
