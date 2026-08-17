@@ -23,12 +23,12 @@ export class AssistantService {
     private readonly insights: InsightsService,
   ) {}
 
-  getDailyQuote() {
-    return this.dailyQuote.getDailyQuote();
+  getDailyQuote(userId: string) {
+    return this.dailyQuote.getDailyQuote(userId);
   }
 
-  getGoalsQuote() {
-    return this.dailyQuote.getGoalsQuote();
+  getGoalsQuote(userId: string) {
+    return this.dailyQuote.getGoalsQuote(userId);
   }
 
   generateInsights(

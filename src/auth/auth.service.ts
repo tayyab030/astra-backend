@@ -41,19 +41,30 @@ import {
 } from './constants/module-settings';
 import { getCurrencyForCountry, getTimezoneForCountry } from './constants/country-currency';
 import {
+  isEmailFlowEnabled,
   sendAccountDeleteEmail,
   sendOtpEmail,
   sendPasswordResetEmail,
 } from './email';
 import { User } from './entities/user.entity';
+import {
+  AuthSession,
+  type AuthClientType,
+} from './entities/auth-session.entity';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000;
 const ACCOUNT_DELETE_TTL_MS = 20 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 3;
-const ACCESS_TOKEN_TTL = '60m';
+const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL = '7d';
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const EMAIL_LIKE_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+
+type ClientMeta = {
+  ipAddress?: string | null;
+  userAgent?: string | null;
+};
 
 /** Tables keyed by user_id — delete before removing the user row. */
 const USER_DATA_TABLES = [
@@ -77,6 +88,7 @@ const USER_DATA_TABLES = [
   'wealth_category_budgets',
   'wealth_savings',
   'wealth_transactions',
+  'auth_sessions',
 ] as const;
 
 @Injectable()
@@ -84,6 +96,8 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(AuthSession)
+    private readonly sessionRepository: Repository<AuthSession>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -207,20 +221,170 @@ export class AuthService {
     return this.serializeUser(saved);
   }
 
-  private signAccessToken(user: User) {
+  private signAccessToken(user: User, sessionId: string) {
     return jwt.sign(
-      { sub: user.id, email: user.email, typ: 'access' },
+      { sub: user.id, email: user.email, typ: 'access', sid: sessionId },
       this.getJwtSecret(),
       { expiresIn: ACCESS_TOKEN_TTL },
     );
   }
 
-  private signRefreshToken(user: User) {
+  private signRefreshToken(user: User, jti: string) {
     return jwt.sign(
-      { sub: user.id, typ: 'refresh' },
+      { sub: user.id, typ: 'refresh', jti },
       this.getJwtSecret(),
       { expiresIn: REFRESH_TOKEN_TTL },
     );
+  }
+
+  private normalizeClientType(value?: string | null): AuthClientType {
+    if (value === 'mobile' || value === 'desktop' || value === 'web') {
+      return value;
+    }
+    return 'web';
+  }
+
+  private buildDeviceLabel(input: {
+    clientType: AuthClientType;
+    platform?: string | null;
+    deviceLabel?: string | null;
+    userAgent?: string | null;
+  }) {
+    if (input.deviceLabel?.trim()) return input.deviceLabel.trim().slice(0, 128);
+
+    const platform = (input.platform || '').trim();
+    if (input.clientType === 'mobile') {
+      return platform ? `${platform} · Astra app` : 'Astra mobile app';
+    }
+    if (input.clientType === 'desktop') {
+      return platform ? `${platform} · Astra desktop` : 'Astra desktop';
+    }
+    if (platform) return `${platform} · Website`;
+    return 'Astra website';
+  }
+
+  private serializeSession(
+    session: AuthSession,
+    currentJti?: string | null,
+    currentSessionId?: string | null,
+  ) {
+    return {
+      id: session.id,
+      client_type: session.client_type,
+      platform: session.platform,
+      device_label: session.device_label,
+      user_agent: session.user_agent,
+      ip_address: session.ip_address,
+      created_at: session.created_at.toISOString(),
+      last_seen_at: (session.last_seen_at ?? session.created_at).toISOString(),
+      expires_at: session.expires_at.toISOString(),
+      is_current: Boolean(
+        (currentSessionId && session.id === currentSessionId) ||
+          (currentJti && session.jti === currentJti),
+      ),
+    };
+  }
+
+  private async createAuthSession(
+    user: User,
+    dto: {
+      client_type?: string;
+      platform?: string;
+      device_label?: string;
+      user_agent?: string;
+    },
+    meta: ClientMeta,
+  ) {
+    const jti = randomUUID();
+    const clientType = this.normalizeClientType(dto.client_type);
+    const userAgent = (dto.user_agent || meta.userAgent || null)?.slice(0, 512) ?? null;
+    const platform = dto.platform?.trim().slice(0, 32) || null;
+    const deviceLabel = this.buildDeviceLabel({
+      clientType,
+      platform,
+      deviceLabel: dto.device_label,
+      userAgent,
+    });
+
+    const session = this.sessionRepository.create({
+      user_id: user.id,
+      jti,
+      client_type: clientType,
+      platform,
+      device_label: deviceLabel,
+      user_agent: userAgent,
+      ip_address: meta.ipAddress?.slice(0, 64) || null,
+      expires_at: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      revoked_at: null,
+      last_seen_at: new Date(),
+    });
+    await this.sessionRepository.save(session);
+
+    // Website: one active browser login at a time — revoke older web sessions
+    // so their refresh tokens stop working (forces logout on other tabs/browsers).
+    if (clientType === 'web') {
+      await this.revokeOtherSessionsOfType(user.id, 'web', session.id);
+    }
+
+    return {
+      session,
+      refresh: this.signRefreshToken(user, jti),
+    };
+  }
+
+  /**
+   * Keep a single active session per client type (used for Website).
+   * Revokes every other non-expired session of that type for the user.
+   */
+  private async revokeOtherSessionsOfType(
+    userId: string,
+    clientType: AuthClientType,
+    keepSessionId: string,
+  ) {
+    const now = new Date();
+    const others = await this.sessionRepository.find({
+      where: {
+        user_id: userId,
+        client_type: clientType,
+      },
+    });
+
+    let changed = 0;
+    for (const session of others) {
+      if (session.id === keepSessionId) continue;
+      if (session.revoked_at) continue;
+      if (session.expires_at.getTime() <= now.getTime()) continue;
+      session.revoked_at = now;
+      changed += 1;
+    }
+
+    if (changed > 0) {
+      await this.sessionRepository.save(others);
+    }
+    return changed;
+  }
+
+  /**
+   * If multiple Website sessions are still active (legacy), keep the newest
+   * by last_seen_at and revoke the rest so only one shows / stays signed in.
+   */
+  private async enforceSingleWebSession(userId: string) {
+    const now = new Date();
+    const webSessions = await this.sessionRepository.find({
+      where: { user_id: userId, client_type: 'web' },
+      order: { last_seen_at: 'DESC', created_at: 'DESC' },
+    });
+
+    const active = webSessions.filter(
+      (s) => !s.revoked_at && s.expires_at.getTime() > now.getTime(),
+    );
+    if (active.length <= 1) return;
+
+    const [, ...stale] = active;
+    for (const session of stale) {
+      session.revoked_at = now;
+    }
+    await this.sessionRepository.save(stale);
   }
 
   private generateOtp() {
@@ -378,6 +542,16 @@ export class AuthService {
       module_settings: DEFAULT_MODULE_SETTINGS,
     });
     const saved = await this.userRepository.save(user);
+
+    // TEMPORARY_EMAIL_FLOW — when MODE !== local, skip OTP email and auto-verify.
+    // Revert: always call issueOtp(saved) and return otp_token (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      saved.is_verified = true;
+      saved.verified_at = new Date();
+      await this.userRepository.save(saved);
+      return { message: 'Registration successful' };
+    }
+
     const withOtp = await this.issueOtp(saved);
 
     return {
@@ -452,6 +626,16 @@ export class AuthService {
   }
 
   async resendOtp(dto: ResendOtpDto) {
+    // TEMPORARY_EMAIL_FLOW — OTP email disabled when MODE !== local.
+    // Revert: delete this early return (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      throw new BadRequestException({
+        non_field_errors: [
+          'Email verification is temporarily disabled in this environment.',
+        ],
+      });
+    }
+
     const user = await this.userRepository.findOne({
       where: { id: dto.user_id },
     });
@@ -478,6 +662,16 @@ export class AuthService {
   }
 
   async resendOtpFromLogin(dto: ResendOtpLoginDto) {
+    // TEMPORARY_EMAIL_FLOW — OTP email disabled when MODE !== local.
+    // Revert: delete this early return (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      throw new BadRequestException({
+        non_field_errors: [
+          'Email verification is temporarily disabled in this environment.',
+        ],
+      });
+    }
+
     const user = await this.findUserByLoginAndPassword(dto.login, dto.password);
 
     if (user.is_verified) {
@@ -502,7 +696,7 @@ export class AuthService {
     };
   }
 
-  async jwtCreate(dto: JwtCreateDto) {
+  async jwtCreate(dto: JwtCreateDto, meta: ClientMeta = {}) {
     const user = await this.findUserByLogin(dto.login);
     if (!user) {
       throw new UnauthorizedException({
@@ -531,14 +725,17 @@ export class AuthService {
       });
     }
 
+    const { session, refresh } = await this.createAuthSession(user, dto, meta);
+
     return {
-      access: this.signAccessToken(user),
-      refresh: this.signRefreshToken(user),
+      access: this.signAccessToken(user, session.id),
+      refresh,
+      session_id: session.id,
       user: this.serializeUser(user),
     };
   }
 
-  async jwtRefresh(dto: JwtRefreshDto) {
+  async jwtRefresh(dto: JwtRefreshDto, meta: ClientMeta = {}) {
     const secret = this.getJwtSecret();
     let payload: jwt.JwtPayload;
 
@@ -572,62 +769,188 @@ export class AuthService {
       });
     }
 
-    return { access: this.signAccessToken(user) };
+    const jti = typeof payload.jti === 'string' ? payload.jti : null;
+    if (jti) {
+      const session = await this.sessionRepository.findOne({ where: { jti } });
+      if (!session || session.user_id !== user.id) {
+        throw new UnauthorizedException({
+          detail: 'Token is invalid or expired',
+          code: 'token_not_valid',
+        });
+      }
+      if (session.revoked_at || session.expires_at.getTime() <= Date.now()) {
+        throw new UnauthorizedException({
+          detail: 'Token is invalid or expired',
+          code: 'token_not_valid',
+        });
+      }
+
+      session.last_seen_at = new Date();
+      if (dto.client_type) {
+        session.client_type = this.normalizeClientType(dto.client_type);
+      }
+      if (dto.platform?.trim()) {
+        session.platform = dto.platform.trim().slice(0, 32);
+      }
+      if (dto.device_label?.trim()) {
+        session.device_label = dto.device_label.trim().slice(0, 128);
+      }
+      const ua = dto.user_agent || meta.userAgent;
+      if (ua) session.user_agent = ua.slice(0, 512);
+      if (meta.ipAddress) session.ip_address = meta.ipAddress.slice(0, 64);
+      await this.sessionRepository.save(session);
+
+      return {
+        access: this.signAccessToken(user, session.id),
+        session_id: session.id,
+      };
+    }
+
+    // Legacy refresh tokens (no jti): mint a real session so device list + revoke work.
+    const { session, refresh } = await this.createAuthSession(user, dto, meta);
+    return {
+      access: this.signAccessToken(user, session.id),
+      refresh,
+      session_id: session.id,
+      rotated_refresh: true,
+    };
   }
 
-  verifyAccessToken(token: string) {
+  async listSessions(userId: string, currentSessionId?: string | null) {
+    const now = new Date();
+    await this.enforceSingleWebSession(userId);
+
+    const sessions = await this.sessionRepository.find({
+      where: { user_id: userId },
+      order: { last_seen_at: 'DESC', created_at: 'DESC' },
+    });
+
+    const active = sessions.filter(
+      (s) => !s.revoked_at && s.expires_at.getTime() > now.getTime(),
+    );
+
+    return {
+      count: active.length,
+      sessions: active.map((s) =>
+        this.serializeSession(s, undefined, currentSessionId),
+      ),
+    };
+  }
+
+  async revokeSession(userId: string, sessionId: string) {
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId, user_id: userId },
+    });
+    if (!session) {
+      throw new NotFoundException({ detail: 'Session not found' });
+    }
+    if (!session.revoked_at) {
+      session.revoked_at = new Date();
+      await this.sessionRepository.save(session);
+    }
+    return { message: 'Session revoked', id: session.id };
+  }
+
+  async revokeAllSessions(userId: string) {
+    const now = new Date();
+    const sessions = await this.sessionRepository.find({
+      where: { user_id: userId },
+    });
+    let revoked = 0;
+    for (const session of sessions) {
+      if (!session.revoked_at && session.expires_at.getTime() > now.getTime()) {
+        session.revoked_at = now;
+        revoked += 1;
+      }
+    }
+    if (revoked > 0) {
+      await this.sessionRepository.save(sessions);
+    }
+    return { message: 'All sessions revoked', revoked };
+  }
+
+  async verifyAccessToken(token: string) {
     const secret = this.getJwtSecret();
 
+    let payload: jwt.JwtPayload;
     try {
       const decoded = jwt.verify(token, secret);
       if (typeof decoded === 'string') {
         throw new Error('Invalid token');
       }
-      const payload = decoded as jwt.JwtPayload;
+      payload = decoded as jwt.JwtPayload;
       if (payload.typ !== 'access' || typeof payload.sub !== 'string') {
         throw new Error('Invalid token type');
       }
-
-      return {
-        sub: payload.sub,
-        email: typeof payload.email === 'string' ? payload.email : '',
-      };
     } catch {
       throw new UnauthorizedException({
         detail: 'Token is invalid or expired',
         code: 'token_not_valid',
       });
     }
+
+    const sessionId = typeof payload.sid === 'string' ? payload.sid : null;
+    if (!sessionId) {
+      // Pre-session access tokens cannot be revoked remotely — force re-login.
+      throw new UnauthorizedException({
+        detail: 'Session expired. Please sign in again.',
+        code: 'session_required',
+      });
+    }
+
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId, user_id: payload.sub },
+    });
+    if (
+      !session ||
+      session.revoked_at ||
+      session.expires_at.getTime() <= Date.now()
+    ) {
+      throw new UnauthorizedException({
+        detail: 'Session revoked or expired. Please sign in again.',
+        code: 'session_revoked',
+      });
+    }
+
+    return {
+      sub: payload.sub,
+      email: typeof payload.email === 'string' ? payload.email : '',
+      sid: session.id,
+    };
   }
 
   async jwtVerify(dto: JwtVerifyDto) {
-    this.verifyAccessToken(dto.token);
+    await this.verifyAccessToken(dto.token);
     return {};
   }
 
-  async requestPasswordReset(dto: ForgotPasswordDto) {
-    const email = dto.email.trim().toLowerCase();
-    const user = await this.userRepository.findOne({ where: { email } });
-
-    if (!user) {
-      return {
-        message:
-          'If an account exists with that email, a reset link has been sent.',
-        sent: true,
-      };
-    }
-
+  /**
+   * Shared password-reset issuance for login (forgot) and settings.
+   * TEMPORARY_EMAIL_FLOW: when MODE !== local, skip email and return reset_token
+   * so the client can open the reset form directly. Revert by always sending
+   * email and never returning reset_token (search TEMPORARY_EMAIL_FLOW).
+   */
+  private async completePasswordResetRequest(user: User) {
     if (this.isPasswordResetStillValid(user)) {
       const remainingMs =
         user.password_reset_expires_at!.getTime() - Date.now();
+      const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+
+      // TEMPORARY_EMAIL_FLOW — return existing token when email is off
+      if (!isEmailFlowEnabled()) {
+        return {
+          message: 'A recovery session is still valid. Continue to set a new password.',
+          sent: false,
+          reset_token: user.password_reset_token,
+          remaining_time_seconds: remainingSeconds,
+        };
+      }
+
       return {
         message:
           'A recovery link was already sent and is still valid. Check your inbox.',
         sent: false,
-        remaining_time_seconds: Math.max(
-          0,
-          Math.floor(remainingMs / 1000),
-        ),
+        remaining_time_seconds: remainingSeconds,
       };
     }
 
@@ -636,6 +959,16 @@ export class AuthService {
       Date.now() + PASSWORD_RESET_TTL_MS,
     );
     await this.userRepository.save(user);
+
+    // TEMPORARY_EMAIL_FLOW — skip email; client uses reset_token (login + settings)
+    if (!isEmailFlowEnabled()) {
+      return {
+        message: 'Password reset ready. Continue to set a new password.',
+        sent: false,
+        reset_token: user.password_reset_token,
+        remaining_time_seconds: Math.floor(PASSWORD_RESET_TTL_MS / 1000),
+      };
+    }
 
     const frontendUrl =
       process.env.FRONTEND_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
@@ -647,6 +980,39 @@ export class AuthService {
         'If an account exists with that email, a reset link has been sent.',
       sent: true,
     };
+  }
+
+  async requestPasswordReset(dto: ForgotPasswordDto) {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      // TEMPORARY_EMAIL_FLOW — keep response vague; no email to send anyway
+      if (!isEmailFlowEnabled()) {
+        return {
+          message:
+            'If an account exists with that email, you can reset your password.',
+          sent: false,
+        };
+      }
+
+      return {
+        message:
+          'If an account exists with that email, a reset link has been sent.',
+        sent: true,
+      };
+    }
+
+    return this.completePasswordResetRequest(user);
+  }
+
+  /** Settings: start password reset for the signed-in user (same TEMPORARY_EMAIL_FLOW). */
+  async requestPasswordResetForAuthenticatedUser(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException({ detail: 'User not found.' });
+    }
+    return this.completePasswordResetRequest(user);
   }
 
   async getPasswordResetStatus(token: string) {
@@ -701,6 +1067,20 @@ export class AuthService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException({ detail: 'User not found.' });
+    }
+
+    // TEMPORARY_EMAIL_FLOW — when MODE !== local, skip confirmation email and delete now.
+    // Revert: remove this block so deletion always goes through email confirm
+    // (search TEMPORARY_EMAIL_FLOW).
+    if (!isEmailFlowEnabled()) {
+      const email = user.email;
+      await this.wipeAllUserData(user.id);
+      return {
+        message:
+          'Your account and all related data have been permanently deleted.',
+        email,
+        sent: false,
+      };
     }
 
     if (this.isAccountDeleteStillValid(user)) {

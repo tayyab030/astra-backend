@@ -19,6 +19,10 @@ export class HealthSettings {
   @Column({ type: 'decimal', precision: 5, scale: 1, nullable: true })
   height_cm: number | null;
 
+  /** Optional goal weight (kg); should sit within the healthy BMI range for height. */
+  @Column({ type: 'decimal', precision: 5, scale: 1, nullable: true })
+  ideal_weight_kg: number | null;
+
   @Column({ type: 'int', default: 8 })
   water_glasses_target: number;
 

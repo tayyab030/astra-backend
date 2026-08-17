@@ -102,11 +102,17 @@ Use `Authorization: JWT <access>` on protected routes.
 
 ## `POST /auth/password/forgot/`
 
-Request a password reset link. Body: `{ "email": "user@example.com" }`
+Request a password reset link (login / public). Body: `{ "email": "user@example.com" }`
 
-**200:** `{ "message": "If an account exists with that email, a reset link has been sent.", "sent": true }`
+**200 (MODE=local):** `{ "message": "If an account exists with that email, a reset link has been sent.", "sent": true }`
 
 When a reset link was already sent and is still valid (within 10 minutes): `{ "message": "A recovery link was already sent and is still valid. Check your inbox.", "sent": false, "remaining_time_seconds": 540 }`
+
+**TEMPORARY (`MODE` ≠ `local`):** no email is sent. Response includes `reset_token` so the client can open the reset form directly: `{ "message": "...", "sent": false, "reset_token": "<uuid>", "remaining_time_seconds": 600 }`
+
+## `POST /auth/me/forgot-password/`
+
+Requires auth (Settings → Change Password). Starts the same reset flow for the signed-in user (no email body). Response shape matches `POST /auth/password/forgot/` including TEMPORARY `reset_token` when `MODE` ≠ `local`.
 
 Always returns the same generic message for unknown emails (`sent: true`).
 

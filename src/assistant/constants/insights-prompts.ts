@@ -34,7 +34,7 @@ const JSON_ONLY =
   'Return ONLY valid JSON matching the schema. No markdown, no code fences, no preamble.';
 
 const LIFESTYLE_COACHING = [
-  'Tone: caring Jarvis-style aide — calm, precise, look-after-yourself (never claim to be Jarvis).',
+  'Follow STRICT AI RULES for personality and language — do not override them with a default Jarvis tone.',
   'When live stats support it, coach on lifestyle: overwork and rest, sleep too little/too much or off-schedule, trips/dining (hope they enjoy), and overspending on food & dine (gently urge cutting back).',
   `Ideal sleep window: use context ideal_sleep (or bedtime/wake targets) if present; otherwise assume ${DEFAULT_IDEAL_SLEEP.label} (~${DEFAULT_IDEAL_SLEEP.hours}h).`,
   'When sleep sessions or hours exist, comment on both duration and timing vs that window (e.g. late bedtime, short night, oversleeping past wake).',
@@ -45,17 +45,15 @@ const HORIZON_FIELD =
 
 export function insightSystemPrompt(
   kind: InsightKind,
-  personalityTone: string,
-  scopeGuidance: string,
   periodMeta: InsightPeriodMeta,
 ): string {
   const base = [
     "You are Astra, a personal life OS AI that writes short, specific insights from the user's live stats.",
-    personalityTone,
-    scopeGuidance,
+    'STRICT AI RULES (personality, language, data scope) override any default tone in this prompt.',
     periodPromptGuidance(periodMeta),
     LIFESTYLE_COACHING,
-    'Use only the provided context. Do not invent exact dollar amounts, dates, or counts that are not in the context.',
+    'Use only the provided context. Do not invent exact money amounts, dates, or counts that are not in the context.',
+    'Money: follow STRICT AI RULES preferred currency and any currency / formatted fields in context. Never default to dollars or USD unless that is the user currency.',
     'Be concise, actionable, and personalized. Prefer 1–2 sentences per item.',
     'Connect dots across domains when possible (e.g. low sleep → weaker focus → missed habits).',
     JSON_ONLY,
@@ -71,7 +69,7 @@ export function insightSystemPrompt(
     case 'wealth':
       return `${base} Schema: {"items":[{"message":"string","type":"success|warning|tip|prediction","title":"string","horizon":"today|last_week|last_month"}]}. Return exactly 5 financial insights. ${HORIZON_FIELD} Mix horizons when period is mixed. Call out food & dine waste gently when category data shows it.`;
     case 'health':
-      return `${base} Schema: {"items":[{"message":"string","title":"string","horizon":"today|last_week|last_month"}]}. Return exactly 4 health/wellness insights. ${HORIZON_FIELD} Mix horizons when period is mixed. At least one should address sleep vs the ideal window (${DEFAULT_IDEAL_SLEEP.label}) when sleep data is present.`;
+      return `${base} Schema: {"items":[{"message":"string","title":"string","horizon":"today|last_week|last_month"}]}. Return exactly 4 health/wellness insights. ${HORIZON_FIELD} Mix horizons when period is mixed. At least one should address sleep vs the ideal window (${DEFAULT_IDEAL_SLEEP.label}) when sleep data is present. When latestWeightKg / bmi / idealWeightKg / recentWeights are present, at least one insight MUST cover weight, BMI, healthy-range delta, or progress toward ideal weight (use the exact kg figures from context).`;
     case 'life_score':
       return `${base} Schema: {"text":"string","forecast":{"score":number,"label":"string"},"horizon":"today|last_week|last_month"}. text is one short AI insight about the life score. Include horizon for the text focus. forecast.score is 0–100 projected score; forecast.label is a short timeline phrase like "At current pace, ~2 months".`;
     case 'analytics':
@@ -90,6 +88,8 @@ export function insightUserPrompt(
     `Generate ${kind} insights for period=${periodMeta.period} (${periodMeta.label}).`,
     `Coverage: ${periodMeta.covers_from} → ${periodMeta.covers_to}.`,
     `User context JSON:\n${contextJson}`,
+    'If context.currency / currency_code is set, every money mention MUST use that currency.',
+    'Prefer context.*.formatted money strings when present.',
     `Ideal sleep fallback (if not in JSON): bedtime ${DEFAULT_IDEAL_SLEEP.bedtime}, wake ${DEFAULT_IDEAL_SLEEP.wake}.`,
   ].join('\n');
 }

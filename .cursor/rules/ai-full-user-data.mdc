@@ -1,0 +1,70 @@
+---
+description: Astra AI features must receive all signed-in user module data by default
+alwaysApply: true
+---
+
+# Astra AI — full user data by default
+
+Applies to **astra-frontend**, **astra-backend**, and **MyProjectName** (mobile) whenever you build or change AI features: insights panels, assistant chat context, quotes, coaching, analytics AI, or any future Groq/LLM surface.
+
+## Default rule (mandatory)
+
+**Always give the AI the signed-in user’s data from all Life OS modules**, unless the human prompt **explicitly** says to omit a field, module, or category.
+
+Modules to include by default (non-exhaustive — include new modules the same way):
+
+- Profile / settings (currency, timezone, AI prefs, etc.)
+- Tasks & projects
+- Time track
+- Goals
+- Wealth (respect currency formatting)
+- Health (weight, BMI, ideal weight, height, water, sleep, exercise, workouts, mood, habits linked to health)
+- Habits
+- Notes
+- Analytics / life score / dashboard aggregates
+
+## Opt-out only
+
+Do **not** omit data because:
+
+- “This page is only about X”
+- “Keep the payload small”
+- “Insights are water/sleep focused”
+- Convenience or partial snapshots
+
+**Only** skip something when the user prompt clearly says e.g. “do not send wealth”, “exclude notes”, “omit weight”.
+
+## Implementation checklist
+
+When adding or editing an AI insight / chat context builder:
+
+1. Start from **all available user/module fields** for that request (or a shared full-context builder).
+2. If building a page-scoped insight, still include **cross-module** facts the model needs (e.g. Health insights must include weight/BMI/ideal weight, not only water/sleep).
+3. Prefer one shared context assembler over per-page hand-picked subsets.
+4. Cache keys must include a context fingerprint so new fields regenerate AI output.
+5. Never invent numbers — only send real data; if a module has no data yet, send null/empty, don’t drop the key silently without reason.
+
+## Examples
+
+```ts
+// ❌ BAD — page-local subset; weight never reaches the model
+const insightContext = {
+  waterGlasses, sleepHours, exerciseMinutes, habitsProgress,
+}
+
+// ✅ GOOD — include all health (and relevant cross-module) user data
+const insightContext = {
+  waterGlasses, sleepHours, exerciseMinutes, habitsProgress,
+  latestWeightKg, heightCm, idealWeightKg, bmi, bmiLabel,
+  healthyWeightDelta, idealWeightDelta, recentWeights, moodToday,
+  // …other modules the user has data for, unless prompt says omit
+}
+```
+
+## Secrets
+
+Still never send passwords, OTPs, reset tokens, raw refresh tokens, or other secrets. Full **product data** ≠ secrets.
+
+## Related
+
+Also follow `.cursor/rules/assistant-user-context.mdc` for profile field sync into Groq user context.

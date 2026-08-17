@@ -21,4 +21,12 @@ export class MeController {
   requestDeleteAccount(@Req() req: AuthenticatedRequest) {
     return this.authService.requestAccountDeletion(req.user!.sub);
   }
+
+  /** Settings → Change Password. Same TEMPORARY_EMAIL_FLOW as public forgot. */
+  @Post(['forgot-password', 'forgot-password/'])
+  requestForgotPassword(@Req() req: AuthenticatedRequest) {
+    return this.authService.requestPasswordResetForAuthenticatedUser(
+      req.user!.sub,
+    );
+  }
 }

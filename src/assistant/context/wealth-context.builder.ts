@@ -35,9 +35,11 @@ function monthLabel(year: number, month: number) {
 export function buildWealthContextBlock(
   dashboard: WealthDashboardLike,
   currencyCode: string,
+  rates: Record<string, number> = { USD: 1 },
 ): string {
   const currency = (currencyCode || 'USD').trim().toUpperCase() || 'USD';
-  const money = (value: number) => formatWealthAmount(value, currency);
+  const money = (valueUsd: number) =>
+    formatWealthAmount(valueUsd, currency, rates);
 
   const filter =
     dashboard.filter.mode === 'month'
@@ -73,7 +75,8 @@ export function buildWealthContextBlock(
     'Never use it to describe another person\'s finances.',
     'Use only these figures for wealth questions. Do not invent missing numbers.',
     'Net worth here means all-time income minus all-time expenses in Astra.',
-    `All amounts use the user currency ${currency}. Format like $21 or PKR 23.`,
+    `All amounts below are already converted to the user currency ${currency}.`,
+    `Always write money using ${currency} (e.g. ${currency === 'USD' ? '$21' : `${currency} 23`}). Never use $ or USD unless currency is USD.`,
     `Currency code: ${currency}.`,
     `Period: ${filter}`,
     `Net worth (all-time income minus expenses): ${money(dashboard.net_worth)}`,
