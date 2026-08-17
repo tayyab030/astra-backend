@@ -1,0 +1,59 @@
+---
+description: Any new or changed app screen, tab, or add-action must be added to the assistant app map
+alwaysApply: true
+---
+
+# Astra AI — app knowledge stays in sync
+
+Applies to **astra-frontend**, **MyProjectName** (mobile), and **astra-backend**.
+
+Astra answers "where is this?", "how do I add this?", and "how do I change this?" from a single static map of the product UI:
+
+**`astra-backend/src/assistant/context/app-map.ts`**
+
+It is rendered by `app-knowledge.builder.ts` and injected into every assistant chat message via `AssistantContextService.buildLiveContext`. If a surface is not in that file, **Astra does not know it exists** and is instructed to say so.
+
+## Mandatory rule
+
+Whenever you **add, rename, move, or remove** any of the following in either client, update `app-map.ts` in the **same change**:
+
+- a page or route
+- a tab or sub-view within a page
+- a sidebar / nav / drawer item
+- a create, edit, or delete affordance (button, FAB, modal, dialog)
+- a settings section or an individual setting
+- a dashboard quick action
+
+This is not optional and not a follow-up task. A UI change that ships without the matching `app-map.ts` change is incomplete.
+
+## How to update
+
+Add or edit the `AppSurface` entry:
+
+```ts
+{
+  name: 'Habits',
+  path: '/app/habits',
+  summary: 'daily habit tracking with date navigation and missed-habit review',
+  tabs: ['Overview', 'Habits', 'Missed'],
+  actions: [{ label: 'Add Habit', path: '/app/habits?action=add' }],
+  notes: ['Create either a single habit or a habit pack.'],
+}
+```
+
+Rules for entries:
+
+1. `label` must be the **exact text the user sees** on the button, not a paraphrase. Astra quotes it back to them.
+2. `path` must be a real working deep link. Follow the shared convention: `?tab=<tab>` selects a tab, `?action=<name>` opens a create form. Wire the new `action` name into `useOpenActionParam` (web) or the equivalent screen handler (mobile) so the link actually works.
+3. Set `platform: 'web'` or `platform: 'mobile'` **only** when the surface genuinely does not exist on the other client. Omitting it means "both", which is the common case.
+4. Keep `summary` to one short clause and `notes` to the facts a user would ask about (field names, where a setting lives). This block ships in the system prompt of every chat message, so length is a real per-message cost.
+5. Do not duplicate user data here. This file describes the **product**, never the signed-in user's content.
+
+## Adding a whole new module
+
+Also add the sidebar entry to the module list in the `Modules:` section it belongs to, and check whether `ASTRA_SYSTEM_PROMPT` in `astra-backend/src/assistant/constants/prompts.ts` needs the module named in its opening line.
+
+## Related
+
+- `.cursor/rules/ai-full-user-data.mdc` — all AI surfaces get full Life OS **user data** by default. That rule covers the user's content; this one covers the app's structure.
+- `.cursor/rules/assistant-user-context.mdc` (backend) — profile field sync into Groq user context.

@@ -96,12 +96,14 @@ export function buildUserContextBlock(
     lines.push(`${labelForField(key)}: ${formatFieldValue(value)}`);
   }
 
+  const firstName = first || username || fullName;
+
   lines.push(
-    honorific === 'sir'
-      ? `Preferred address: Gender is male. Always check gender first, then address as "sir" (e.g. "Yes, sir"). You may also use their first name "${first || fullName}" when warmer.`
-      : honorific === 'madam'
-        ? `Preferred address: Gender is female. Always check gender first, then address as "madam" or "ma'am" (prefer "madam"; e.g. "Yes, madam"). You may also use their first name "${first || fullName}" when warmer.`
-        : `Preferred address: Gender is not male/female. Do not use sir/madam/ma'am. Use their first name "${first || fullName}" or full name "${fullName}".`,
+    honorific
+      ? `Preferred address: Gender is ${honorific === 'sir' ? 'male' : 'female'}, so the correct form is "${honorific}". Their first name "${firstName}" also works occasionally.`
+      : `Preferred address: Gender is not male or female, so do not use sir/madam/ma'am. Use their first name "${firstName}" only.`,
+    `Never address them as "${fullName}" in a reply. The full name is for records, not for speech.`,
+    'Address them sparingly: greet them by name or honorific in the first reply, then mostly answer with no form of address at all. Do not prefix every reply with it.',
   );
 
   return lines.join('\n');

@@ -5,6 +5,7 @@ import {
   buildStrictAiRulesBlock,
   shouldIncludeWealthContext,
 } from './ai-settings-context.builder';
+import { buildAppKnowledgeBlock } from './app-knowledge.builder';
 import { buildUserContextBlock } from './user-context.builder';
 import { buildWealthContextBlock } from './wealth-context.builder';
 import { fetchUsdExchangeRates } from '../constants/currency';
@@ -24,6 +25,7 @@ export class AssistantContextService {
       const parts: string[] = [
         buildUserContextBlock(user as Record<string, unknown>),
         buildStrictAiRulesBlock(user, 'conversation'),
+        buildAppKnowledgeBlock(),
       ];
 
       if (shouldIncludeWealthContext(user.ai_data_scope)) {
