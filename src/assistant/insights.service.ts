@@ -63,6 +63,90 @@ type CacheEntry = {
   cache_until_ms: number;
 };
 
+/**
+ * Key fragments that prove the user has actually recorded something.
+ *
+ * Clients always send a full context object, so a brand-new account arrives as
+ * explicit zeros and empty arrays rather than missing keys. Scaffolding the
+ * clients send regardless of activity (targets, goals, currency, life-score
+ * category skeletons) is deliberately excluded, so only real activity counts.
+ */
+const EVIDENCE_KEY_FRAGMENTS = [
+  'taskscompleted',
+  'tasksdue',
+  'taskspending',
+  'overduetasks',
+  'taskcount',
+  'taskcompletionweek',
+  'focushours',
+  'sessioncount',
+  'timetracked',
+  'trackedminutes',
+  'monthlyincome',
+  'monthlyexpenses',
+  'transactioncount',
+  'transactions',
+  'spending',
+  'netsavings',
+  'wastespending',
+  'categorytotals',
+  'expensecategories',
+  'expensedistribution',
+  'expensetop',
+  'budgetsover',
+  'waterglasses',
+  'sleephours',
+  'exerciseminutes',
+  'latestweightkg',
+  'recentweights',
+  'recentworkoutcount',
+  'moodtoday',
+  'habitstotal',
+  'habitscomplete',
+  'longeststreak',
+  'habitstreak',
+  'tophabitstreaks',
+  'dayhabits',
+  'activegoals',
+  'activecount',
+  'completedgoals',
+  'goalprogress',
+  'notescreated',
+  'notesthisweek',
+  'notesinperiod',
+  'badgesearned',
+  'achievementsearned',
+];
+
+/** String values that clients use to mean "nothing here yet". */
+const PLACEHOLDER_VALUES = new Set([
+  '',
+  '-',
+  '—',
+  '0',
+  'n/a',
+  'na',
+  'none',
+  'null',
+  'unknown',
+]);
+
+/**
+ * Suppress insights only once we are confident we understood the payload.
+ * If a client sends a shape we do not recognise we generate as normal, so a
+ * future module never silently loses its insights.
+ */
+const MIN_RECOGNIZED_EVIDENCE_KEYS = 3;
+
+/**
+ * Quiet window for a brand-new account. Within it, an account with no data
+ * gets no insights at all. Once it lapses, normal coaching resumes and an
+ * still-empty account is nudged about it as usual.
+ */
+export const NEW_ACCOUNT_GRACE_DAYS = 3;
+
+const NEW_ACCOUNT_GRACE_MS = NEW_ACCOUNT_GRACE_DAYS * 24 * 60 * 60 * 1000;
+
 const WEALTH_CONTEXT_KEYS = new Set([
   'monthlyIncome',
   'monthlyExpenses',
@@ -124,6 +208,19 @@ export class InsightsService {
       safeContext.currency_code = currency;
       safeContext.currency_instructions = `User currency is ${currency}. Write all money in ${currency}. Never use $ or USD unless currency is USD.`;
     }
+    // Give a brand-new, still-empty account a few quiet days before coaching
+    // starts. Past the grace window an empty account is nudged as normal.
+    // Checked before the cache so nothing stale is served during the window.
+    if (
+      this.isWithinNewAccountGrace(user.created_at) &&
+      this.looksLikeEmptyAccount(safeContext)
+    ) {
+      this.logger.log(
+        `Insights held for ${userId} (${kind}): new account with no data, within ${NEW_ACCOUNT_GRACE_DAYS}-day grace window.`,
+      );
+      return this.emptyResult(kind, periodMeta, generatedAt, true);
+    }
+
     const contextFingerprint = this.contextFingerprint(safeContext);
     const cacheKey = `${userId}:${kind}:${periodMeta.period_key}:${aiSettingsFingerprint(user)}:${contextFingerprint}`;
     const cached = this.cache.get(cacheKey);
@@ -220,6 +317,81 @@ export class InsightsService {
       out[key] = value;
     }
     return out;
+  }
+
+  /**
+   * True while the account is younger than the grace window. An unreadable or
+   * missing created_at falls through to normal behaviour rather than silence.
+   */
+  private isWithinNewAccountGrace(createdAt: unknown): boolean {
+    const created =
+      createdAt instanceof Date
+        ? createdAt.getTime()
+        : typeof createdAt === 'string'
+          ? Date.parse(createdAt)
+          : NaN;
+    if (!Number.isFinite(created)) return false;
+    const age = Date.now() - created;
+    return age >= 0 && age < NEW_ACCOUNT_GRACE_MS;
+  }
+
+  /**
+   * True when the payload is a shape we recognise and every piece of evidence
+   * in it is zero, empty, or a placeholder — i.e. the user has logged nothing.
+   */
+  private looksLikeEmptyAccount(context: Record<string, unknown>): boolean {
+    const probe = { recognized: 0, positive: false };
+    this.probeForUserData(context, probe, 0);
+    return probe.recognized >= MIN_RECOGNIZED_EVIDENCE_KEYS && !probe.positive;
+  }
+
+  private probeForUserData(
+    value: unknown,
+    probe: { recognized: number; positive: boolean },
+    depth: number,
+  ): void {
+    if (probe.positive || depth > 4 || !value || typeof value !== 'object') {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        this.probeForUserData(entry, probe, depth + 1);
+      }
+      return;
+    }
+
+    for (const [key, entry] of Object.entries(value)) {
+      const normalized = key.toLowerCase().replace(/[^a-z]/g, '');
+      if (EVIDENCE_KEY_FRAGMENTS.some((f) => normalized.includes(f))) {
+        probe.recognized += 1;
+        if (this.isPositiveSignal(entry)) {
+          probe.positive = true;
+          return;
+        }
+        continue;
+      }
+      this.probeForUserData(entry, probe, depth + 1);
+    }
+  }
+
+  private isPositiveSignal(value: unknown): boolean {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      return !PLACEHOLDER_VALUES.has(value.trim().toLowerCase());
+    }
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') {
+      // Money fields arrive wrapped as { amount, formatted, currency }.
+      const amount = (value as Record<string, unknown>).amount;
+      if (typeof amount === 'number') {
+        return Number.isFinite(amount) && amount !== 0;
+      }
+      return Object.keys(value).length > 0;
+    }
+    return false;
   }
 
   private contextFingerprint(context: Record<string, unknown>): string {
