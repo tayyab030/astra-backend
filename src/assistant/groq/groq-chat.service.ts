@@ -3,7 +3,9 @@ import {
   ASSISTANT_HISTORY_LIMIT,
   assertGroqApiKey,
   GROQ_CHAT_MODEL,
+  GROQ_CHAT_REASONING_EFFORT,
   GROQ_CHAT_URL,
+  GROQ_REASONING_TOKEN_HEADROOM,
 } from '../constants/groq.config';
 import { ASTRA_SYSTEM_PROMPT } from '../constants/prompts';
 
@@ -16,6 +18,7 @@ export type GroqChatMessage = {
 
 type GroqChatCompletionResponse = {
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
       content?: string | null;
     };
@@ -24,6 +27,20 @@ type GroqChatCompletionResponse = {
     message?: string;
   };
 };
+
+function readContent(data: GroqChatCompletionResponse): string {
+  const choice = data.choices?.[0];
+  const content = choice?.message?.content?.trim();
+  if (content) {
+    return content;
+  }
+  if (choice?.finish_reason === 'length') {
+    throw new ServiceUnavailableException(
+      'Groq hit the token limit while reasoning and returned no answer.',
+    );
+  }
+  throw new ServiceUnavailableException('Groq returned an empty response.');
+}
 
 function buildPrivacyBoundary(userId: string) {
   return [
@@ -69,7 +86,9 @@ export class GroqChatService {
           model: GROQ_CHAT_MODEL,
           messages,
           temperature: 0.7,
-          max_tokens: 700,
+          max_completion_tokens: 700 + GROQ_REASONING_TOKEN_HEADROOM,
+          reasoning_effort: GROQ_CHAT_REASONING_EFFORT,
+          include_reasoning: false,
         }),
       });
     } catch (error) {
@@ -85,12 +104,7 @@ export class GroqChatService {
       );
     }
 
-    const content = data.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      throw new ServiceUnavailableException('Groq returned an empty response.');
-    }
-
-    return content;
+    return readContent(data);
   }
 
   /**
@@ -124,7 +138,10 @@ export class GroqChatService {
           model: GROQ_CHAT_MODEL,
           messages,
           temperature: options.temperature ?? 0.9,
-          max_tokens: options.maxTokens ?? 80,
+          max_completion_tokens:
+            (options.maxTokens ?? 80) + GROQ_REASONING_TOKEN_HEADROOM,
+          reasoning_effort: GROQ_CHAT_REASONING_EFFORT,
+          include_reasoning: false,
         }),
       });
     } catch (error) {
@@ -140,11 +157,6 @@ export class GroqChatService {
       );
     }
 
-    const content = data.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      throw new ServiceUnavailableException('Groq returned an empty response.');
-    }
-
-    return content;
+    return readContent(data);
   }
 }
