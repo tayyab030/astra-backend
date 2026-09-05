@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuthService } from '../../auth/auth.service';
 import { WealthService } from '../../wealth/wealth.service';
+import { PrayerService } from '../../prayer/prayer.service';
 import {
   buildStrictAiRulesBlock,
   shouldIncludeWealthContext,
@@ -8,6 +9,10 @@ import {
 import { buildAppKnowledgeBlock } from './app-knowledge.builder';
 import { buildUserContextBlock } from './user-context.builder';
 import { buildWealthContextBlock } from './wealth-context.builder';
+import {
+  buildPrayerContextBlock,
+  buildPrayerMissingContextBlock,
+} from './prayer-context.builder';
 import { fetchUsdExchangeRates } from '../constants/currency';
 
 @Injectable()
@@ -17,6 +22,7 @@ export class AssistantContextService {
   constructor(
     private readonly authService: AuthService,
     private readonly wealthService: WealthService,
+    private readonly prayerService: PrayerService,
   ) {}
 
   async buildLiveContext(userId: string): Promise<string | null> {
@@ -47,6 +53,27 @@ export class AssistantContextService {
             }`,
           );
         }
+      }
+
+      try {
+        const { prefs, timings, todayCompleted } =
+          await this.prayerService.getTodayTimingsForUser(userId);
+        if (timings) {
+          parts.push(buildPrayerContextBlock(timings, todayCompleted));
+        } else {
+          parts.push(
+            buildPrayerMissingContextBlock({
+              hasMethod: prefs.method != null,
+              hasLocation: prefs.latitude != null && prefs.longitude != null,
+            }),
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Prayer context skipped for ${userId}: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
       }
 
       return parts.join('\n\n');

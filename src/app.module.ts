@@ -11,6 +11,7 @@ import { HealthModule } from './health/health.module';
 import { NotesModule } from './notes/notes.module';
 import { TimeTrackModule } from './time-track/time-track.module';
 import { WealthModule } from './wealth/wealth.module';
+import { PrayerModule } from './prayer/prayer.module';
 import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
@@ -51,6 +52,7 @@ import { AssistantModule } from './assistant/assistant.module';
     HabitsModule,
     HealthModule,
     NotesModule,
+    PrayerModule,
     AssistantModule,
   ],
   controllers: [AppController],

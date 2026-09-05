@@ -11,6 +11,7 @@ export const protectedRoutePrefixes = [
   'habits',
   'health',
   'notes',
+  'prayer',
   'assistant',
 ];
 

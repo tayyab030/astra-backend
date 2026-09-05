@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { WealthModule } from '../wealth/wealth.module';
+import { PrayerModule } from '../prayer/prayer.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { AssistantContextService } from './context/assistant-context.service';
@@ -19,6 +20,7 @@ import { InsightsService } from './insights.service';
     TypeOrmModule.forFeature([AssistantConversation, AssistantMessage]),
     AuthModule,
     WealthModule,
+    PrayerModule,
   ],
   controllers: [AssistantController],
   providers: [
