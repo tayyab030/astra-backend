@@ -38,10 +38,12 @@ export const APP_MODULES: AppSurface[] = [
     name: 'Dashboard',
     path: '/app/dashboard',
     summary:
-      'home screen with greeting, GPS current location, daily quote, life score badge, stat cards, habits snapshot, expense chart, AI insights, and the Quick Actions grid',
+      'home screen with greeting, GPS current location, daily quote, life score badge, stat cards, prayer summary widget, habits snapshot, expense chart, AI insights, and the Quick Actions grid',
     notes: [
       'The Quick Actions grid is the fastest route to every create form listed below.',
       'Current location uses device GPS (when permission is granted) and appears under the greeting on mobile.',
+      'Prayer widget shows today’s tracking count, current prayer (when active), next prayer time, and remaining countdown; tap opens Prayer → Times.',
+      'Smart Insights may include prayer/salah coaching when today’s tracking or prayer context is available.',
     ],
   },
   {
@@ -163,7 +165,7 @@ export const APP_MODULES: AppSurface[] = [
       'Times shows Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha, Imsak, Midnight, First Third, and Tahajjud (Last Third), plus Hijri date when available.',
       'Adhan toggle on Times (and Track) enables local notifications for selected prayers (Fajr–Isha by default; Tahajjud optional).',
       'Track: mark Fajr, Dhuhr, Asr, Maghrib, Isha, and Tahajjud (Lastthird) complete for today or past days. Future prayer times are locked; after a prayer starts you choose On time or Qaza. Tahajjud is only trackable between Last Third and Fajr.',
-      'Analysis: completion % and bar chart for the last 7 or 30 days.',
+      'Analysis: completion % and bar chart for the last 7 or 30 days, plus AI Prayer Insights (on-time/qaza patterns, streaks, cross-domain coaching) when Smart insights is on.',
       'Current prayer card appears only while a prayer window is active, with time left until the next.',
     ],
   },

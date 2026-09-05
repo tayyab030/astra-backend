@@ -46,9 +46,9 @@ function buildPrivacyBoundary(userId: string) {
   return [
     'PRIVACY BOUNDARY (mandatory).',
     `You are assisting only signed-in user id: ${userId}.`,
-    'All context below is exclusively theirs.',
+    'All context below is exclusively theirs — their Life OS modules only, never the full database and never another user.',
     'You cannot access, load, or discuss any other Astra user\'s private data.',
-    'If asked about another user, another account, or someone else\'s finances/profile, refuse and explain you only have this signed-in user\'s data.',
+    'If asked about another user, another account, or someone else\'s data, refuse and explain you only have this signed-in user\'s data.',
   ].join('\n');
 }
 

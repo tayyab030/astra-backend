@@ -1,0 +1,24 @@
+---
+description: Assistant/Groq must only ever see the authenticated user's data
+alwaysApply: true
+---
+
+# Astra assistant — data isolation
+
+## Rule
+
+Astra AI may use **all** of the signed-in user’s Life OS data. It must **never** receive or be able to answer with another user’s data or a whole-database dump.
+
+## Must
+
+- Pass only `userId` from the verified access token into context loaders.
+- Keep conversation / message queries filtered by `user_id`.
+- Keep `buildPrivacyBoundary(userId)` on every chat completion.
+- When adding entities, always include `user_id` ownership checks (`findOwned*`).
+
+## Must not
+
+- Query without `userId` / `user_id` for AI context.
+- Accept a client-supplied “target user id” for context.
+- Log or send other users’ payloads to Groq.
+- Treat `app-map.ts` as a substitute for user records (map = UI; context builders = data).

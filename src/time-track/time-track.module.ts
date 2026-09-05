@@ -18,5 +18,6 @@ import { TimeTrackService } from './time-track.service';
   ],
   controllers: [TimeTrackController],
   providers: [TimeTrackService],
+  exports: [TimeTrackService],
 })
 export class TimeTrackModule {}

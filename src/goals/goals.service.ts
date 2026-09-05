@@ -60,6 +60,29 @@ export class GoalsService {
     };
   }
 
+  /** All goals for the signed-in user (no period filter) — AI assistant context only. */
+  async getAssistantSnapshot(userId: string) {
+    const goals = await this.goalRepository.find({
+      where: { user_id: userId },
+      relations: { milestones: true },
+      order: { target_date: 'ASC' },
+    });
+    const linkedTaskCounts = await this.tasksService.getLinkedTaskCounts(
+      userId,
+      goals.map((goal) => goal.id),
+    );
+
+    return {
+      summary: this.buildSummary(goals),
+      goals: goals.map((goal) =>
+        this.serializeGoal(
+          goal,
+          linkedTaskCounts.get(goal.id) ?? EMPTY_LINKED_TASKS,
+        ),
+      ),
+    };
+  }
+
   async getGoal(userId: string, goalId: string) {
     const goal = await this.findOwnedGoal(userId, goalId);
     return this.serializeGoalWithLinkedTasks(userId, goal);

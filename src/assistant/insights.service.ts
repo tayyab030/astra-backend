@@ -11,6 +11,7 @@ import {
 } from './context/ai-settings-context.builder';
 import {
   DEFAULT_INSIGHT_PERIOD,
+  NEW_ACCOUNT_GRACE_HOURS,
   isInsightHorizon,
   isInsightPeriod,
   resolveInsightPeriodMeta,
@@ -45,6 +46,7 @@ export type InsightsResult = {
   enabled: boolean;
   source: 'groq' | 'cache' | 'fallback';
   generated_at: string;
+  unlocked_horizons?: InsightHorizon[];
   items?: InsightItem[];
   text?: string;
   forecast?: { score: number; label: string };
@@ -116,6 +118,15 @@ const EVIDENCE_KEY_FRAGMENTS = [
   'notesinperiod',
   'badgesearned',
   'achievementsearned',
+  'prayerscompleted',
+  'prayerstoday',
+  'prayercompletion',
+  'ontimecount',
+  'qazacount',
+  'prayerstreak',
+  'perfectdays',
+  'todaystatuses',
+  'todaycompleted',
 ];
 
 /** String values that clients use to mean "nothing here yet". */
@@ -132,20 +143,10 @@ const PLACEHOLDER_VALUES = new Set([
 ]);
 
 /**
- * Suppress insights only once we are confident we understood the payload.
- * If a client sends a shape we do not recognise we generate as normal, so a
- * future module never silently loses its insights.
+ * Empty-account tone only when we recognise enough evidence keys.
+ * Unknown shapes still generate normally so new modules are never silenced.
  */
 const MIN_RECOGNIZED_EVIDENCE_KEYS = 3;
-
-/**
- * Quiet window for a brand-new account. Within it, an account with no data
- * gets no insights at all. Once it lapses, normal coaching resumes and an
- * still-empty account is nudged about it as usual.
- */
-export const NEW_ACCOUNT_GRACE_DAYS = 3;
-
-const NEW_ACCOUNT_GRACE_MS = NEW_ACCOUNT_GRACE_DAYS * 24 * 60 * 60 * 1000;
 
 const WEALTH_CONTEXT_KEYS = new Set([
   'monthlyIncome',
@@ -188,10 +189,23 @@ export class InsightsService {
       typeof user.timezone === 'string' && user.timezone.trim()
         ? user.timezone.trim()
         : 'UTC';
-    const periodMeta = resolveInsightPeriodMeta(period, timeZone);
+    const periodMeta = resolveInsightPeriodMeta(
+      period,
+      timeZone,
+      new Date(),
+      user.created_at,
+    );
 
     if (user.ai_insights === false) {
       return this.emptyResult(kind, periodMeta, generatedAt, false);
+    }
+
+    // New accounts: quiet for a few hours, then today-only until week/month unlock.
+    if (periodMeta.unlocked_horizons.length === 0) {
+      this.logger.log(
+        `Insights held for ${userId} (${kind}): within ${NEW_ACCOUNT_GRACE_HOURS}h new-account quiet window.`,
+      );
+      return this.emptyResult(kind, periodMeta, generatedAt, true);
     }
 
     const dataScope: AiDataScope = isAiDataScope(user.ai_data_scope)
@@ -208,18 +222,14 @@ export class InsightsService {
       safeContext.currency_code = currency;
       safeContext.currency_instructions = `User currency is ${currency}. Write all money in ${currency}. Never use $ or USD unless currency is USD.`;
     }
-    // Give a brand-new, still-empty account a few quiet days before coaching
-    // starts. Past the grace window an empty account is nudged as normal.
-    // Checked before the cache so nothing stale is served during the window.
-    if (
-      this.isWithinNewAccountGrace(user.created_at) &&
-      this.looksLikeEmptyAccount(safeContext)
-    ) {
-      this.logger.log(
-        `Insights held for ${userId} (${kind}): new account with no data, within ${NEW_ACCOUNT_GRACE_DAYS}-day grace window.`,
-      );
-      return this.emptyResult(kind, periodMeta, generatedAt, true);
+
+    const emptyAccount = this.looksLikeEmptyAccount(safeContext);
+    if (emptyAccount) {
+      safeContext.account_stage = 'new_or_empty';
+      safeContext.insight_tone =
+        'Do not blame the user for empty or zero stats. Welcome them and suggest one small next step for today across Life OS modules.';
     }
+    safeContext.unlocked_horizons = periodMeta.unlocked_horizons;
 
     const contextFingerprint = this.contextFingerprint(safeContext);
     const cacheKey = `${userId}:${kind}:${periodMeta.period_key}:${aiSettingsFingerprint(user)}:${contextFingerprint}`;
@@ -240,7 +250,7 @@ export class InsightsService {
       };
     }
 
-    const system = insightSystemPrompt(kind, periodMeta);
+    const system = insightSystemPrompt(kind, periodMeta, { emptyAccount });
     const userPrompt = insightUserPrompt(
       kind,
       JSON.stringify(safeContext).slice(0, 6000),
@@ -299,6 +309,7 @@ export class InsightsService {
       covers_from: periodMeta.covers_from,
       covers_to: periodMeta.covers_to,
       cache_until: periodMeta.cache_until,
+      unlocked_horizons: periodMeta.unlocked_horizons,
       enabled,
       source,
       generated_at: generatedAt,
@@ -310,7 +321,7 @@ export class InsightsService {
     context: Record<string, unknown>,
     scope: AiDataScope,
   ): Record<string, unknown> {
-    if (scope === 'all') return context;
+    if (scope === 'all') return { ...context };
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(context)) {
       if (WEALTH_CONTEXT_KEYS.has(key)) continue;
@@ -319,26 +330,6 @@ export class InsightsService {
     return out;
   }
 
-  /**
-   * True while the account is younger than the grace window. An unreadable or
-   * missing created_at falls through to normal behaviour rather than silence.
-   */
-  private isWithinNewAccountGrace(createdAt: unknown): boolean {
-    const created =
-      createdAt instanceof Date
-        ? createdAt.getTime()
-        : typeof createdAt === 'string'
-          ? Date.parse(createdAt)
-          : NaN;
-    if (!Number.isFinite(created)) return false;
-    const age = Date.now() - created;
-    return age >= 0 && age < NEW_ACCOUNT_GRACE_MS;
-  }
-
-  /**
-   * True when the payload is a shape we recognise and every piece of evidence
-   * in it is zero, empty, or a placeholder — i.e. the user has logged nothing.
-   */
   private looksLikeEmptyAccount(context: Record<string, unknown>): boolean {
     const probe = { recognized: 0, positive: false };
     this.probeForUserData(context, probe, 0);
@@ -384,7 +375,6 @@ export class InsightsService {
     }
     if (Array.isArray(value)) return value.length > 0;
     if (typeof value === 'object') {
-      // Money fields arrive wrapped as { amount, formatted, currency }.
       const amount = (value as Record<string, unknown>).amount;
       if (typeof amount === 'number') {
         return Number.isFinite(amount) && amount !== 0;
@@ -418,6 +408,7 @@ export class InsightsService {
       return this.emptyResult(kind, periodMeta, generatedAt, true, 'fallback');
     }
     const obj = json as Record<string, unknown>;
+    const allowed = new Set(periodMeta.unlocked_horizons);
 
     const base: InsightsResult = {
       kind,
@@ -427,6 +418,7 @@ export class InsightsService {
       covers_from: periodMeta.covers_from,
       covers_to: periodMeta.covers_to,
       cache_until: periodMeta.cache_until,
+      unlocked_horizons: periodMeta.unlocked_horizons,
       enabled: true,
       source: 'groq',
       generated_at: generatedAt,
@@ -450,9 +442,7 @@ export class InsightsService {
         ...base,
         text: text || undefined,
         forecast:
-          score !== undefined && label
-            ? { score, label }
-            : undefined,
+          score !== undefined && label ? { score, label } : undefined,
       };
     }
 
@@ -460,18 +450,24 @@ export class InsightsService {
       return {
         ...base,
         daily: this.asTrimmedString(obj.daily),
-        monthly: this.asTrimmedString(obj.monthly),
-        cross_domain: this.asCrossDomain(obj.cross_domain),
+        monthly:
+          allowed.has('last_month') || allowed.has('last_week')
+            ? this.asTrimmedString(obj.monthly)
+            : undefined,
+        cross_domain: this.filterCrossDomainByHorizon(
+          this.asCrossDomain(obj.cross_domain),
+          allowed,
+        ),
         story: this.asTrimmedString(obj.story),
         predictions: this.asStringArray(obj.predictions),
-        coach: this.asCoach(obj.coach),
+        coach: this.filterCoachByHorizon(this.asCoach(obj.coach), allowed),
         goal_prediction: this.asTrimmedString(obj.goal_prediction),
       };
     }
 
     return {
       ...base,
-      items: this.asItems(obj.items),
+      items: this.asItems(obj.items, allowed),
     };
   }
 
@@ -526,18 +522,28 @@ export class InsightsService {
     return items.length ? items : undefined;
   }
 
-  private asItems(value: unknown): InsightItem[] {
+  private asItems(
+    value: unknown,
+    allowedHorizons: Set<InsightHorizon>,
+  ): InsightItem[] {
     if (!Array.isArray(value)) return [];
-    const allowed: InsightItemType[] = [
+    const allowedTypes: InsightItemType[] = [
       'success',
       'warning',
       'tip',
       'prediction',
     ];
     const items: InsightItem[] = [];
+    const fallbackHorizon = allowedHorizons.has('today')
+      ? 'today'
+      : ([...allowedHorizons][0] as InsightHorizon | undefined);
+
     for (const entry of value) {
       if (typeof entry === 'string' && entry.trim()) {
-        items.push({ message: entry.trim() });
+        items.push({
+          message: entry.trim(),
+          horizon: fallbackHorizon,
+        });
         continue;
       }
       if (!entry || typeof entry !== 'object') continue;
@@ -551,7 +557,7 @@ export class InsightsService {
       if (!message) continue;
       const type =
         typeof row.type === 'string' &&
-        allowed.includes(row.type as InsightItemType)
+        allowedTypes.includes(row.type as InsightItemType)
           ? (row.type as InsightItemType)
           : undefined;
       const title =
@@ -560,7 +566,11 @@ export class InsightsService {
           : undefined;
       const horizonRaw =
         typeof row.horizon === 'string' ? row.horizon : undefined;
-      const horizon = isInsightHorizon(horizonRaw) ? horizonRaw : undefined;
+      let horizon = isInsightHorizon(horizonRaw) ? horizonRaw : undefined;
+      if (horizon && !allowedHorizons.has(horizon)) {
+        horizon = fallbackHorizon;
+      }
+      if (!horizon) horizon = fallbackHorizon;
       items.push({ message, type, title, horizon });
     }
     return this.shuffle(items);
@@ -577,9 +587,10 @@ export class InsightsService {
 
   private asCrossDomain(
     value: unknown,
-  ): { title: string; insight: string }[] | undefined {
+  ): { title: string; insight: string; horizon?: InsightHorizon }[] | undefined {
     if (!Array.isArray(value)) return undefined;
-    const rows: { title: string; insight: string }[] = [];
+    const rows: { title: string; insight: string; horizon?: InsightHorizon }[] =
+      [];
     for (const entry of value) {
       if (!entry || typeof entry !== 'object') continue;
       const row = entry as Record<string, unknown>;
@@ -590,23 +601,72 @@ export class InsightsService {
           : typeof row.message === 'string'
             ? row.message.trim()
             : '';
-      if (title && insight) rows.push({ title, insight });
+      const horizonRaw =
+        typeof row.horizon === 'string' ? row.horizon : undefined;
+      const horizon = isInsightHorizon(horizonRaw) ? horizonRaw : undefined;
+      if (title && insight) rows.push({ title, insight, horizon });
     }
     return rows.length ? rows : undefined;
   }
 
+  private filterCrossDomainByHorizon(
+    rows:
+      | { title: string; insight: string; horizon?: InsightHorizon }[]
+      | undefined,
+    allowed: Set<InsightHorizon>,
+  ): { title: string; insight: string }[] | undefined {
+    if (!rows?.length) return undefined;
+    const fallback = allowed.has('today')
+      ? 'today'
+      : ([...allowed][0] as InsightHorizon | undefined);
+    const filtered = rows
+      .map((row) => {
+        const horizon =
+          row.horizon && allowed.has(row.horizon) ? row.horizon : fallback;
+        if (!horizon) return null;
+        return { title: row.title, insight: row.insight };
+      })
+      .filter((row): row is { title: string; insight: string } => row != null);
+    return filtered.length ? filtered : undefined;
+  }
+
   private asCoach(
     value: unknown,
-  ): { label: string; text: string }[] | undefined {
+  ): { label: string; text: string; horizon?: InsightHorizon }[] | undefined {
     if (!Array.isArray(value)) return undefined;
-    const rows: { label: string; text: string }[] = [];
+    const rows: { label: string; text: string; horizon?: InsightHorizon }[] =
+      [];
     for (const entry of value) {
       if (!entry || typeof entry !== 'object') continue;
       const row = entry as Record<string, unknown>;
       const label = typeof row.label === 'string' ? row.label.trim() : '';
       const text = typeof row.text === 'string' ? row.text.trim() : '';
-      if (label && text) rows.push({ label, text });
+      const horizonRaw =
+        typeof row.horizon === 'string' ? row.horizon : undefined;
+      const horizon = isInsightHorizon(horizonRaw) ? horizonRaw : undefined;
+      if (label && text) rows.push({ label, text, horizon });
     }
     return rows.length ? rows : undefined;
+  }
+
+  private filterCoachByHorizon(
+    rows:
+      | { label: string; text: string; horizon?: InsightHorizon }[]
+      | undefined,
+    allowed: Set<InsightHorizon>,
+  ): { label: string; text: string }[] | undefined {
+    if (!rows?.length) return undefined;
+    const fallback = allowed.has('today')
+      ? 'today'
+      : ([...allowed][0] as InsightHorizon | undefined);
+    const filtered = rows
+      .map((row) => {
+        const horizon =
+          row.horizon && allowed.has(row.horizon) ? row.horizon : fallback;
+        if (!horizon) return null;
+        return { label: row.label, text: row.text };
+      })
+      .filter((row): row is { label: string; text: string } => row != null);
+    return filtered.length ? filtered : undefined;
   }
 }

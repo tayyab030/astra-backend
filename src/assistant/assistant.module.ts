@@ -3,6 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { WealthModule } from '../wealth/wealth.module';
 import { PrayerModule } from '../prayer/prayer.module';
+import { TasksModule } from '../tasks/tasks.module';
+import { GoalsModule } from '../goals/goals.module';
+import { HabitsModule } from '../habits/habits.module';
+import { HealthModule } from '../health/health.module';
+import { NotesModule } from '../notes/notes.module';
+import { TimeTrackModule } from '../time-track/time-track.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { AssistantContextService } from './context/assistant-context.service';
@@ -21,6 +27,12 @@ import { InsightsService } from './insights.service';
     AuthModule,
     WealthModule,
     PrayerModule,
+    TasksModule,
+    GoalsModule,
+    HabitsModule,
+    HealthModule,
+    NotesModule,
+    TimeTrackModule,
   ],
   controllers: [AssistantController],
   providers: [

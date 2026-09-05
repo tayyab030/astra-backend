@@ -38,7 +38,99 @@ export type InsightPeriodMeta = {
   label: string;
   /** ISO timestamp when this bucket expires */
   cache_until: string;
+  /**
+   * Horizons this account is allowed to receive right now.
+   * Empty = still in the new-account quiet window (no insights).
+   */
+  unlocked_horizons: InsightHorizon[];
 };
+
+/** Quiet window after signup before any insights appear. */
+export const NEW_ACCOUNT_GRACE_HOURS = 4;
+
+const NEW_ACCOUNT_GRACE_MS = NEW_ACCOUNT_GRACE_HOURS * 60 * 60 * 1000;
+
+function parseCreatedAtMs(createdAt: unknown): number | null {
+  if (createdAt instanceof Date) {
+    const ms = createdAt.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof createdAt === 'string') {
+    const ms = Date.parse(createdAt);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
+
+function createdYmdInZone(
+  createdAt: unknown,
+  timeZone: string,
+): string | null {
+  const ms = parseCreatedAtMs(createdAt);
+  if (ms == null) return null;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(ms));
+}
+
+/**
+ * Progressive unlock for new accounts:
+ * - first few hours → none
+ * - then → today only
+ * - after a completed Mon–Sun week that overlaps membership → + last_week
+ * - after a completed calendar month that overlaps membership → + last_month
+ *
+ * Missing/invalid created_at → all horizons (legacy / safe default).
+ */
+export function resolveUnlockedHorizons(
+  createdAt: unknown,
+  timeZone = 'UTC',
+  now = new Date(),
+): InsightHorizon[] {
+  const createdMs = parseCreatedAtMs(createdAt);
+  if (createdMs == null) {
+    return [...INSIGHT_HORIZONS];
+  }
+
+  const ageMs = now.getTime() - createdMs;
+  if (ageMs < 0) return [];
+  if (ageMs < NEW_ACCOUNT_GRACE_MS) return [];
+
+  const unlocked: InsightHorizon[] = ['today'];
+  const createdYmd = createdYmdInZone(createdAt, timeZone);
+  if (!createdYmd) return unlocked;
+
+  const today = zonedToday(now, timeZone);
+  const todayYmd = ymdString(today.year, today.month, today.day);
+  const daysSinceMonday = (today.weekday + 6) % 7;
+  const thisMonday = addDaysYmd(todayYmd, -daysSinceMonday);
+  const weekTo = addDaysYmd(thisMonday, -1);
+  // Last completed week overlapped the account (ended on/after signup day).
+  if (weekTo >= createdYmd) {
+    unlocked.push('last_week');
+  }
+
+  const month = previousMonthRange(today);
+  // Last calendar month overlapped the account (ended on/after signup day).
+  if (month.covers_to >= createdYmd) {
+    unlocked.push('last_month');
+  }
+
+  return unlocked;
+}
+
+export function isWithinNewAccountGrace(
+  createdAt: unknown,
+  now = new Date(),
+): boolean {
+  const createdMs = parseCreatedAtMs(createdAt);
+  if (createdMs == null) return false;
+  const ageMs = now.getTime() - createdMs;
+  return ageMs >= 0 && ageMs < NEW_ACCOUNT_GRACE_MS;
+}
 
 type ZonedYmd = {
   year: number;
@@ -197,14 +289,19 @@ function previousMonthRange(today: ZonedYmd): {
  * mixed: today + last week + last month in one pack (default UI).
  * weekly: last completed Mon–Sun; refreshes Mondays.
  * monthly: last calendar month; refreshes on the 1st.
+ *
+ * Horizons are clipped by account age (new users start today-only).
  */
 export function resolveInsightPeriodMeta(
   period: InsightPeriod,
   timeZone = 'UTC',
   now = new Date(),
+  createdAt?: unknown,
 ): InsightPeriodMeta {
   const today = zonedToday(now, timeZone);
   const todayYmd = ymdString(today.year, today.month, today.day);
+  const unlocked = resolveUnlockedHorizons(createdAt, timeZone, now);
+  const horizonKey = unlocked.length ? unlocked.join('+') : 'none';
 
   if (period === 'mixed') {
     const daysSinceMonday = (today.weekday + 6) % 7;
@@ -213,13 +310,34 @@ export function resolveInsightPeriodMeta(
     const weekTo = addDaysYmd(thisMonday, -1);
     const month = previousMonthRange(today);
     const tomorrow = addDaysYmd(todayYmd, 1);
+
+    let covers_from = todayYmd;
+    if (unlocked.includes('last_month')) {
+      covers_from = month.covers_from;
+    } else if (unlocked.includes('last_week')) {
+      covers_from = weekFrom;
+    }
+
+    const parts: string[] = [];
+    if (unlocked.includes('today')) parts.push('today');
+    if (unlocked.includes('last_week')) {
+      parts.push(`last week ${formatRangeLabel(weekFrom, weekTo)}`);
+    }
+    if (unlocked.includes('last_month')) parts.push('last month');
+
     return {
       period: 'mixed',
-      period_key: `mixed:${todayYmd}`,
-      covers_from: month.covers_from,
+      period_key: `mixed:${todayYmd}:${horizonKey}`,
+      covers_from,
       covers_to: todayYmd,
-      label: `Mixed (today, last week ${formatRangeLabel(weekFrom, weekTo)}, last month)`,
+      label:
+        unlocked.length === 0
+          ? 'Quiet window (new account)'
+          : parts.length === 1 && parts[0] === 'today'
+            ? 'Today'
+            : `Mixed (${parts.join(', ')})`,
       cache_until: localMidnightIso(tomorrow, timeZone, now),
+      unlocked_horizons: unlocked,
     };
   }
 
@@ -229,13 +347,17 @@ export function resolveInsightPeriodMeta(
     const covers_from = addDaysYmd(thisMonday, -7);
     const covers_to = addDaysYmd(thisMonday, -1);
     const nextMonday = addDaysYmd(thisMonday, 7);
+    const weekUnlocked = unlocked.includes('last_week');
     return {
       period: 'weekly',
-      period_key: `weekly:${thisMonday}`,
+      period_key: `weekly:${thisMonday}:${horizonKey}`,
       covers_from,
       covers_to,
-      label: `Last week (${formatRangeLabel(covers_from, covers_to)})`,
+      label: weekUnlocked
+        ? `Last week (${formatRangeLabel(covers_from, covers_to)})`
+        : 'Weekly (not unlocked yet)',
       cache_until: localMidnightIso(nextMonday, timeZone, now),
+      unlocked_horizons: weekUnlocked ? (['last_week'] as InsightHorizon[]) : [],
     };
   }
 
@@ -261,38 +383,73 @@ export function resolveInsightPeriodMeta(
     'November',
     'December',
   ];
+  const monthUnlocked = unlocked.includes('last_month');
   return {
     period: 'monthly',
-    period_key: `monthly:${month.prevYear}-${pad2(month.prevMonth)}`,
+    period_key: `monthly:${month.prevYear}-${pad2(month.prevMonth)}:${horizonKey}`,
     covers_from: month.covers_from,
     covers_to: month.covers_to,
-    label: `Last month (${months[month.prevMonth - 1]} ${month.prevYear})`,
+    label: monthUnlocked
+      ? `Last month (${months[month.prevMonth - 1]} ${month.prevYear})`
+      : 'Monthly (not unlocked yet)',
     cache_until: localMidnightIso(nextFirst, timeZone, now),
+    unlocked_horizons: monthUnlocked
+      ? (['last_month'] as InsightHorizon[])
+      : [],
   };
 }
 
 export function periodPromptGuidance(meta: InsightPeriodMeta): string {
-  if (meta.period === 'mixed') {
-    return [
-      'Period: MIXED digest — each item MUST set horizon to exactly one of: today | last_week | last_month.',
-      `Overall coverage window: ${meta.covers_from} to ${meta.covers_to}.`,
-      'Include a balanced mix of horizons (not all the same). Frame each message to match its horizon.',
-      'Do not put "Today"/"Last week"/"Last month" inside the message text — horizon is a separate field.',
-      'Items will be randomly shuffled before display.',
-    ].join(' ');
+  const unlocked = meta.unlocked_horizons;
+  const allowed = unlocked.join(' | ') || '(none)';
+
+  if (unlocked.length === 0) {
+    return 'Period: QUIET — do not generate insights; the account is still in the new-user quiet window.';
   }
+
   if (meta.period === 'weekly') {
     return [
       `Period: WEEKLY retrospective — ${meta.label}.`,
       `Coverage dates: ${meta.covers_from} to ${meta.covers_to} (last completed week, Mon–Sun).`,
       'Write insights about that past week only. Set every item horizon to last_week.',
       'This pack refreshes every Monday; keep advice stable for the week.',
+      'Never invent empty-history failures. If data is thin, give one constructive tip — do not scold.',
     ].join(' ');
   }
+
+  if (meta.period === 'monthly') {
+    return [
+      `Period: MONTHLY retrospective — ${meta.label}.`,
+      `Coverage dates: ${meta.covers_from} to ${meta.covers_to} (last completed calendar month).`,
+      'Write insights about that past month only. Set every item horizon to last_month.',
+      'This pack refreshes on the 1st of each month; keep advice stable for the month.',
+      'Never invent empty-history failures. If data is thin, give one constructive tip — do not scold.',
+    ].join(' ');
+  }
+
+  // mixed
+  if (unlocked.length === 1 && unlocked[0] === 'today') {
+    return [
+      'Period: TODAY only — this account has not unlocked week/month retrospectives yet.',
+      `Coverage: ${meta.covers_from} (today).`,
+      'Every item MUST set horizon to exactly "today". Do not use last_week or last_month.',
+      'Focus on today’s live stats across all Life OS modules present in context.',
+      'If stats are zero or empty, welcome them and suggest one small next step — never blame them for covering nothing.',
+    ].join(' ');
+  }
+
+  const mixParts: string[] = [];
+  if (unlocked.includes('today')) mixParts.push('today');
+  if (unlocked.includes('last_week')) mixParts.push('last_week');
+  if (unlocked.includes('last_month')) mixParts.push('last_month');
+
   return [
-    `Period: MONTHLY retrospective — ${meta.label}.`,
-    `Coverage dates: ${meta.covers_from} to ${meta.covers_to} (last completed calendar month).`,
-    'Write insights about that past month only. Set every item horizon to last_month.',
-    'This pack refreshes on the 1st of each month; keep advice stable for the month.',
+    `Period: MIXED digest — each item MUST set horizon to exactly one of: ${allowed}.`,
+    `Allowed horizons only: ${mixParts.join(', ')}. Do not invent other horizons.`,
+    `Overall coverage window: ${meta.covers_from} to ${meta.covers_to}.`,
+    'Include a balanced mix of the allowed horizons (not all the same). Frame each message to match its horizon.',
+    'Do not put "Today"/"Last week"/"Last month" inside the message text — horizon is a separate field.',
+    'Items will be randomly shuffled before display.',
+    'Never scold for missing history outside unlocked horizons. If a module has no data yet, tip gently — do not invent failures.',
   ].join(' ');
 }
