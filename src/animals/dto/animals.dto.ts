@@ -102,8 +102,8 @@ export class UpdateAnimalDto {
 
   @IsOptional()
   @IsString()
-  @IsIn([...ANIMAL_SEX])
-  sex?: string | null;
+  @IsIn([...ANIMAL_SEX], { message: 'Sex must be Male or Female' })
+  sex?: string;
 
   @IsOptional()
   @Type(() => Number)

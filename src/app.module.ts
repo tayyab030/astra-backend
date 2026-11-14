@@ -12,6 +12,7 @@ import { NotesModule } from './notes/notes.module';
 import { TimeTrackModule } from './time-track/time-track.module';
 import { WealthModule } from './wealth/wealth.module';
 import { AnimalsModule } from './animals/animals.module';
+import { ProductionModule } from './production/production.module';
 import { PrayerModule } from './prayer/prayer.module';
 import { AssistantModule } from './assistant/assistant.module';
 
@@ -50,6 +51,7 @@ import { AssistantModule } from './assistant/assistant.module';
     TasksModule,
     WealthModule,
     AnimalsModule,
+    ProductionModule,
     TimeTrackModule,
     HabitsModule,
     HealthModule,

@@ -8,6 +8,7 @@ export const protectedRoutePrefixes = [
   'tasks',
   'wealth',
   'animals',
+  'production',
   'time-track',
   'habits',
   'health',
