@@ -4,16 +4,18 @@ import {
   IsIn,
   IsInt,
   IsNumber,
+  IsOptional,
+  IsString,
   Max,
   Min,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
-import { WEALTH_EXPENSE_CATEGORY_VALUES } from '../constants/wealth-categories';
+import { WEALTH_SCOPES } from '../constants/wealth-scope';
 
 export class CreateCategoryBudgetDto {
-  @IsIn(WEALTH_EXPENSE_CATEGORY_VALUES, {
-    message: 'Invalid expense category',
-  })
+  @IsString()
+  @MinLength(1)
   category: string;
 
   @Type(() => Number)
@@ -36,4 +38,8 @@ export class CreateCategoryBudgetDto {
   @Min(1)
   @Max(12)
   month?: number;
+
+  @IsOptional()
+  @IsIn(WEALTH_SCOPES, { message: 'Scope must be personal or farm' })
+  scope?: 'personal' | 'farm';
 }

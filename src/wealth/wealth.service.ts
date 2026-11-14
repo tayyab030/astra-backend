@@ -7,12 +7,17 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import {
+  assertCategoryAllowedForScope,
   getCategoryLabel,
+  getExpenseCategoriesForScope,
+  getIncomeCategoriesForScope,
   isIncomeCategory,
   LEGACY_INCOME_CATEGORY,
-  WEALTH_EXPENSE_CATEGORIES,
-  WEALTH_INCOME_CATEGORIES,
 } from './constants/wealth-categories';
+import {
+  DEFAULT_WEALTH_SCOPE,
+  type WealthScope,
+} from './constants/wealth-scope';
 import { CreateCategoryBudgetDto } from './dto/create-category-budget.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateCategoryBudgetDto } from './dto/update-category-budget.dto';
@@ -38,20 +43,26 @@ export class WealthService {
 
   async getDashboard(userId: string, filterDto: WealthFilterDto) {
     const filter = this.resolveFilter(filterDto);
-    return this.buildDashboard(userId, filter);
+    const scope = filterDto.scope ?? DEFAULT_WEALTH_SCOPE;
+    return this.buildDashboard(userId, filter, scope);
   }
 
   async createTransaction(userId: string, dto: CreateTransactionDto) {
-    const signedAmount = isIncomeCategory(dto.category)
+    const scope = dto.scope ?? DEFAULT_WEALTH_SCOPE;
+    assertCategoryAllowedForScope(dto.category, scope);
+
+    const signedAmount = isIncomeCategory(dto.category, scope)
       ? dto.amount
       : -Math.abs(dto.amount);
 
     const transaction = this.transactionRepository.create({
       user_id: userId,
+      scope,
       description: dto.description.trim(),
       amount: signedAmount.toFixed(2),
       category: dto.category,
       date: dto.date,
+      meta: dto.meta ?? null,
     });
 
     const saved = await this.transactionRepository.save(transaction);
@@ -64,9 +75,12 @@ export class WealthService {
     dto: UpdateTransactionDto,
   ) {
     const transaction = await this.findOwnedTransaction(userId, transactionId);
+    const scope = dto.scope ?? transaction.scope ?? DEFAULT_WEALTH_SCOPE;
     const category = dto.category ?? transaction.category;
     const amountValue =
       dto.amount ?? Math.abs(Number(transaction.amount));
+
+    assertCategoryAllowedForScope(category, scope);
 
     if (dto.description !== undefined) {
       transaction.description = dto.description.trim();
@@ -77,8 +91,18 @@ export class WealthService {
     if (dto.category !== undefined) {
       transaction.category = dto.category;
     }
-    if (dto.amount !== undefined || dto.category !== undefined) {
-      const signedAmount = isIncomeCategory(category)
+    if (dto.scope !== undefined) {
+      transaction.scope = dto.scope;
+    }
+    if (dto.meta !== undefined) {
+      transaction.meta = dto.meta;
+    }
+    if (
+      dto.amount !== undefined ||
+      dto.category !== undefined ||
+      dto.scope !== undefined
+    ) {
+      const signedAmount = isIncomeCategory(category, scope)
         ? amountValue
         : -Math.abs(amountValue);
       transaction.amount = signedAmount.toFixed(2);
@@ -95,6 +119,9 @@ export class WealthService {
   }
 
   async createCategoryBudget(userId: string, dto: CreateCategoryBudgetDto) {
+    const scope = dto.scope ?? DEFAULT_WEALTH_SCOPE;
+    assertCategoryAllowedForScope(dto.category, scope, { expenseOnly: true });
+
     if (dto.period_type === 'month' && dto.month === undefined) {
       throw new BadRequestException({
         month: ['Month is required for monthly budgets.'],
@@ -110,6 +137,7 @@ export class WealthService {
     const month = dto.period_type === 'month' ? dto.month! : null;
     await this.ensureBudgetIsUnique(
       userId,
+      scope,
       dto.category,
       dto.period_type,
       dto.year,
@@ -118,6 +146,7 @@ export class WealthService {
 
     const budget = this.budgetRepository.create({
       user_id: userId,
+      scope,
       category: dto.category,
       amount: dto.amount.toFixed(2),
       period_type: dto.period_type,
@@ -170,43 +199,54 @@ export class WealthService {
     };
   }
 
-  private async buildDashboard(userId: string, filter: ResolvedFilter) {
+  private async buildDashboard(
+    userId: string,
+    filter: ResolvedFilter,
+    scope: WealthScope,
+  ) {
     const [transactions, netWorth, budgets, budgetTransactions] =
       await Promise.all([
-        this.listFilteredTransactions(userId, filter),
-        this.getNetWorth(userId),
-        this.listBudgetsForFilter(userId, filter),
-        this.listTransactionsForBudgetSpending(userId, filter),
+        this.listFilteredTransactions(userId, filter, scope),
+        this.getNetWorth(userId, scope),
+        this.listBudgetsForFilter(userId, filter, scope),
+        this.listTransactionsForBudgetSpending(userId, filter, scope),
       ]);
 
     const serializedTransactions = transactions.map((transaction) =>
       this.serializeTransaction(transaction),
     );
 
-    const monthlyIncome = this.sumIncome(transactions);
+    const monthlyIncome = this.sumIncome(transactions, scope);
     const monthlyExpenses = this.sumExpenses(transactions);
 
     return {
       filter,
+      scope,
       net_worth: netWorth,
       monthly_income: monthlyIncome,
       monthly_expenses: monthlyExpenses,
       net_savings: monthlyIncome - monthlyExpenses,
       waste_spending: this.sumWasteSpending(transactions),
       transactions: serializedTransactions,
-      category_totals: this.getCategoryTotals(transactions),
-      income_category_totals: this.getIncomeCategoryTotals(transactions),
-      category_budgets: this.buildCategoryBudgets(budgets, budgetTransactions),
+      category_totals: this.getCategoryTotals(transactions, scope),
+      income_category_totals: this.getIncomeCategoryTotals(transactions, scope),
+      category_budgets: this.buildCategoryBudgets(
+        budgets,
+        budgetTransactions,
+        scope,
+      ),
     };
   }
 
   private async listBudgetsForFilter(
     userId: string,
     filter: ResolvedFilter,
+    scope: WealthScope,
   ) {
     const query = this.budgetRepository
       .createQueryBuilder('budget')
-      .where('budget.user_id = :userId', { userId });
+      .where('budget.user_id = :userId', { userId })
+      .andWhere('budget.scope = :scope', { scope });
 
     if (filter.mode === 'month') {
       query.andWhere(
@@ -244,10 +284,12 @@ export class WealthService {
   private async listTransactionsForBudgetSpending(
     userId: string,
     filter: ResolvedFilter,
+    scope: WealthScope,
   ) {
     const query = this.transactionRepository
       .createQueryBuilder('transaction')
       .where('transaction.user_id = :userId', { userId })
+      .andWhere('transaction.scope = :scope', { scope })
       .andWhere('transaction.amount < 0');
 
     if (filter.mode === 'month') {
@@ -273,17 +315,19 @@ export class WealthService {
   private buildCategoryBudgets(
     budgets: WealthCategoryBudget[],
     transactions: WealthTransaction[],
+    scope: WealthScope,
   ) {
     return budgets.map((budget) => {
       const limit = Number(budget.amount);
-      const spent = this.getSpentForBudget(transactions, budget);
+      const spent = this.getSpentForBudget(transactions, budget, scope);
       const remaining = limit - spent;
       const percentage = limit > 0 ? (spent / limit) * 100 : 0;
 
       return {
         id: budget.id,
+        scope: budget.scope,
         category: budget.category,
-        label: getCategoryLabel(budget.category),
+        label: getCategoryLabel(budget.category, scope),
         period_type: budget.period_type,
         year: budget.year,
         month: budget.month ?? undefined,
@@ -299,14 +343,17 @@ export class WealthService {
   private getSpentForBudget(
     transactions: WealthTransaction[],
     budget: WealthCategoryBudget,
+    scope: WealthScope,
   ) {
+    const expenseCategories = getExpenseCategoriesForScope(scope);
+
     return transactions.reduce((total, transaction) => {
       const amount = Number(transaction.amount);
-      if (amount >= 0 || isIncomeCategory(transaction.category)) {
+      if (amount >= 0 || isIncomeCategory(transaction.category, scope)) {
         return total;
       }
 
-      const category = WEALTH_EXPENSE_CATEGORIES.some(
+      const category = expenseCategories.some(
         (entry) => entry.value === transaction.category,
       )
         ? transaction.category
@@ -345,6 +392,7 @@ export class WealthService {
 
   private async ensureBudgetIsUnique(
     userId: string,
+    scope: WealthScope,
     category: string,
     periodType: 'month' | 'year',
     year: number,
@@ -353,6 +401,7 @@ export class WealthService {
     const query = this.budgetRepository
       .createQueryBuilder('budget')
       .where('budget.user_id = :userId', { userId })
+      .andWhere('budget.scope = :scope', { scope })
       .andWhere('budget.category = :category', { category })
       .andWhere('budget.period_type = :periodType', { periodType })
       .andWhere('budget.year = :year', { year });
@@ -372,9 +421,9 @@ export class WealthService {
     }
   }
 
-  private async getNetWorth(userId: string) {
+  private async getNetWorth(userId: string, scope: WealthScope) {
     const transactions = await this.transactionRepository.find({
-      where: { user_id: userId },
+      where: { user_id: userId, scope },
     });
 
     return transactions.reduce(
@@ -386,10 +435,12 @@ export class WealthService {
   private async listFilteredTransactions(
     userId: string,
     filter: ResolvedFilter,
+    scope: WealthScope,
   ) {
     const query = this.transactionRepository
       .createQueryBuilder('transaction')
       .where('transaction.user_id = :userId', { userId })
+      .andWhere('transaction.scope = :scope', { scope })
       .orderBy('transaction.date', 'DESC')
       .addOrderBy('transaction.created_at', 'DESC');
 
@@ -413,9 +464,9 @@ export class WealthService {
     return query.getMany();
   }
 
-  private sumIncome(transactions: WealthTransaction[]) {
+  private sumIncome(transactions: WealthTransaction[], scope: WealthScope) {
     return transactions.reduce((total, transaction) => {
-      if (!isIncomeCategory(transaction.category)) {
+      if (!isIncomeCategory(transaction.category, scope)) {
         return total;
       }
 
@@ -440,20 +491,24 @@ export class WealthService {
     }, 0);
   }
 
-  private getCategoryTotals(transactions: WealthTransaction[]) {
+  private getCategoryTotals(
+    transactions: WealthTransaction[],
+    scope: WealthScope,
+  ) {
+    const expenseCategories = getExpenseCategoriesForScope(scope);
     const totals = new Map<string, number>();
 
-    WEALTH_EXPENSE_CATEGORIES.forEach((category) => {
+    expenseCategories.forEach((category) => {
       totals.set(category.value, 0);
     });
 
     transactions.forEach((transaction) => {
       const amount = Number(transaction.amount);
-      if (amount >= 0 || isIncomeCategory(transaction.category)) {
+      if (amount >= 0 || isIncomeCategory(transaction.category, scope)) {
         return;
       }
 
-      const key = WEALTH_EXPENSE_CATEGORIES.some(
+      const key = expenseCategories.some(
         (category) => category.value === transaction.category,
       )
         ? transaction.category
@@ -462,39 +517,48 @@ export class WealthService {
       totals.set(key, (totals.get(key) ?? 0) + Math.abs(amount));
     });
 
-    return WEALTH_EXPENSE_CATEGORIES.map((category) => ({
+    return expenseCategories.map((category) => ({
       value: category.value,
       label: category.label,
       total: totals.get(category.value) ?? 0,
     }));
   }
 
-  private getIncomeCategoryTotals(transactions: WealthTransaction[]) {
+  private getIncomeCategoryTotals(
+    transactions: WealthTransaction[],
+    scope: WealthScope,
+  ) {
+    const incomeCategories = getIncomeCategoriesForScope(scope);
+    const fallback =
+      scope === 'farm' ? 'crop_sales' : 'income_other';
     const totals = new Map<string, number>();
 
-    WEALTH_INCOME_CATEGORIES.forEach((category) => {
+    incomeCategories.forEach((category) => {
       totals.set(category.value, 0);
     });
 
     transactions.forEach((transaction) => {
       const amount = Number(transaction.amount);
-      if (amount <= 0 || !isIncomeCategory(transaction.category)) {
+      if (amount <= 0 || !isIncomeCategory(transaction.category, scope)) {
         return;
       }
 
       const key =
         transaction.category === LEGACY_INCOME_CATEGORY
           ? 'income_other'
-          : WEALTH_INCOME_CATEGORIES.some(
+          : incomeCategories.some(
                 (category) => category.value === transaction.category,
               )
             ? transaction.category
-            : 'income_other';
+            : fallback;
 
+      if (!totals.has(key)) {
+        totals.set(key, 0);
+      }
       totals.set(key, (totals.get(key) ?? 0) + Math.abs(amount));
     });
 
-    return WEALTH_INCOME_CATEGORIES.map((category) => ({
+    return incomeCategories.map((category) => ({
       value: category.value,
       label: category.label,
       total: totals.get(category.value) ?? 0,
@@ -528,18 +592,22 @@ export class WealthService {
   private serializeTransaction(transaction: WealthTransaction) {
     return {
       id: transaction.id,
+      scope: transaction.scope ?? DEFAULT_WEALTH_SCOPE,
       description: transaction.description,
       amount: Number(transaction.amount),
       category: transaction.category,
       date: transaction.date,
+      meta: transaction.meta ?? null,
     };
   }
 
   private serializeBudget(budget: WealthCategoryBudget) {
+    const scope = budget.scope ?? DEFAULT_WEALTH_SCOPE;
     return {
       id: budget.id,
+      scope,
       category: budget.category,
-      label: getCategoryLabel(budget.category),
+      label: getCategoryLabel(budget.category, scope),
       period_type: budget.period_type,
       year: budget.year,
       month: budget.month ?? undefined,

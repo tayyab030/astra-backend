@@ -6,9 +6,10 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { WealthScope } from '../constants/wealth-scope';
 
 @Entity('wealth_category_budgets')
-@Index(['user_id', 'category', 'period_type', 'year', 'month'], {
+@Index(['user_id', 'scope', 'category', 'period_type', 'year', 'month'], {
   unique: true,
 })
 export class WealthCategoryBudget {
@@ -17,6 +18,9 @@ export class WealthCategoryBudget {
 
   @Column({ type: 'uuid' })
   user_id: string;
+
+  @Column({ type: 'varchar', length: 16, default: 'personal' })
+  scope: WealthScope;
 
   @Column({ type: 'varchar', length: 32 })
   category: string;

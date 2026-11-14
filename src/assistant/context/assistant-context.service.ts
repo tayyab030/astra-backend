@@ -110,6 +110,7 @@ export class AssistantContextService {
             mode: 'month',
             year: now.getFullYear(),
             month: now.getMonth() + 1,
+            scope: 'personal',
           });
         }),
         this.safeLoad('prayer', userId, () =>

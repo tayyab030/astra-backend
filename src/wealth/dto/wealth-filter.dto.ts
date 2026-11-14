@@ -8,11 +8,16 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import { WEALTH_SCOPES } from '../constants/wealth-scope';
 
 export class WealthFilterDto {
   @IsOptional()
   @IsIn(['month', 'year'])
   mode?: 'month' | 'year';
+
+  @IsOptional()
+  @IsIn(WEALTH_SCOPES, { message: 'Scope must be personal or farm' })
+  scope?: 'personal' | 'farm';
 
   @ValidateIf((dto: WealthFilterDto) => dto.mode === 'month' || !dto.mode)
   @IsOptional()
