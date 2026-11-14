@@ -4,12 +4,14 @@ import {
   IsDateString,
   IsIn,
   IsNumber,
+  IsObject,
+  IsOptional,
   IsString,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
-import { WEALTH_CATEGORY_VALUES } from '../constants/wealth-categories';
+import { WEALTH_SCOPES } from '../constants/wealth-scope';
 
 export class CreateTransactionDto {
   @IsString()
@@ -22,9 +24,18 @@ export class CreateTransactionDto {
   @Min(0.01, { message: 'Amount must be greater than 0' })
   amount: number;
 
-  @IsIn(WEALTH_CATEGORY_VALUES, { message: 'Invalid category' })
+  @IsString()
+  @MinLength(1)
   category: string;
 
   @IsDateString({}, { message: 'Date must be in YYYY-MM-DD format' })
   date: string;
+
+  @IsOptional()
+  @IsIn(WEALTH_SCOPES, { message: 'Scope must be personal or farm' })
+  scope?: 'personal' | 'farm';
+
+  @IsOptional()
+  @IsObject()
+  meta?: Record<string, unknown>;
 }
