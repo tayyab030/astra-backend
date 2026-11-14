@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { RequestMethod } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import dns from 'dns';
 import { AppModule } from './app.module';
@@ -48,7 +49,10 @@ function isAllowedOrigin(origin?: string) {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api');
+  // Keep /health at the root (no /api) so it does not collide with Life OS /api/health.
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: 'health', method: RequestMethod.GET }],
+  });
   app.use(cookieParser());
 
   app.enableCors({

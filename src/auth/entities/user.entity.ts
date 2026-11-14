@@ -82,6 +82,28 @@ export class User {
     };
   } | null;
 
+  /** Aladhan calculation method id (e.g. 1 = Karachi). */
+  @Column({ type: 'int', nullable: true })
+  prayer_calculation_method!: number | null;
+
+  /** Last known coordinates used for prayer times (for Astra context). */
+  @Column({ type: 'double precision', nullable: true })
+  prayer_latitude!: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  prayer_longitude!: number | null;
+
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  prayer_location_label!: string | null;
+
+  /** Fire local/OS Adhan notifications at prayer start. */
+  @Column({ type: 'boolean', default: false })
+  prayer_adhan_enabled!: boolean;
+
+  /** Which trackable prayer keys get Adhan alerts. */
+  @Column({ type: 'simple-json', nullable: true })
+  prayer_adhan_keys!: string[] | null;
+
   @Column({ type: 'boolean', default: false })
   is_verified!: boolean;
 

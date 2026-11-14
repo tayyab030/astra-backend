@@ -1,70 +1,65 @@
 ---
-description: Astra AI features must receive all signed-in user module data by default
+description: Astra AI gets A–Z data for the signed-in user only; never other users or the full DB
 alwaysApply: true
 ---
 
-# Astra AI — full user data by default
+# Astra AI — signed-in user data only (A–Z)
 
 Applies to **astra-frontend**, **astra-backend**, and **MyProjectName** (mobile) whenever you build or change AI features: insights panels, assistant chat context, quotes, coaching, analytics AI, or any future Groq/LLM surface.
 
-## Default rule (mandatory)
+## Security boundary (mandatory)
 
-**Always give the AI the signed-in user’s data from all Life OS modules**, unless the human prompt **explicitly** says to omit a field, module, or category.
+- **Only the logged-in user.** Every query, context builder, and LLM payload must be scoped by the authenticated `userId` from the JWT (`req.user.sub`). Never load another user’s rows.
+- **Never “full DB”.** Do not dump tables, admin lists, or cross-user aggregates into AI context. Only that user’s Life OS records.
+- **Refuse cross-user asks.** Prompts and system rules must refuse requests for another account, another user id, or “someone else’s” data.
+- Secrets stay out: passwords, OTPs, reset tokens, raw refresh tokens.
 
-Modules to include by default (non-exhaustive — include new modules the same way):
+## Default coverage (mandatory)
 
-- Profile / settings (currency, timezone, AI prefs, etc.)
+**Always give the AI that signed-in user’s data from all Life OS modules**, unless the human prompt **explicitly** says to omit a field, module, or category.
+
+Include by default (non-exhaustive — **new modules must be wired the same way**):
+
+- Profile / settings
 - Tasks & projects
 - Time track
 - Goals
 - Wealth (respect currency formatting)
-- Health (weight, BMI, ideal weight, height, water, sleep, exercise, workouts, mood, habits linked to health)
+- Health
 - Habits
+- Prayer
 - Notes
 - Analytics / life score / dashboard aggregates
 
+### Future modules
+
+When you add a new Life OS module (entity + user-owned rows):
+
+1. Export its service from its Nest module.
+2. Add a compact context builder under `src/assistant/context/`.
+3. Call it from `AssistantContextService.buildLiveContext(userId)` with **only** that `userId`.
+4. Mention the module in `ASTRA_SYSTEM_PROMPT` access rules if needed.
+5. Update this list.
+
+A new module that ships without AI context for the signed-in user is incomplete.
+
+## Chat live context
+
+`buildLiveContext(userId)` is the server-side source of truth for chat. It must assemble **all** signed-in user module blocks (not only profile / wealth / app-map). Insights may also receive client context, but chat must not depend on the client sending module data.
+
 ## Opt-out only
 
-Do **not** omit data because:
-
-- “This page is only about X”
-- “Keep the payload small”
-- “Insights are water/sleep focused”
-- Convenience or partial snapshots
-
-**Only** skip something when the user prompt clearly says e.g. “do not send wealth”, “exclude notes”, “omit weight”.
+Do **not** omit data because of page focus, payload size, or convenience. **Only** skip when the user prompt clearly says to (e.g. “do not send wealth”).
 
 ## Implementation checklist
 
-When adding or editing an AI insight / chat context builder:
-
-1. Start from **all available user/module fields** for that request (or a shared full-context builder).
-2. If building a page-scoped insight, still include **cross-module** facts the model needs (e.g. Health insights must include weight/BMI/ideal weight, not only water/sleep).
-3. Prefer one shared context assembler over per-page hand-picked subsets.
-4. Cache keys must include a context fingerprint so new fields regenerate AI output.
-5. Never invent numbers — only send real data; if a module has no data yet, send null/empty, don’t drop the key silently without reason.
-
-## Examples
-
-```ts
-// ❌ BAD — page-local subset; weight never reaches the model
-const insightContext = {
-  waterGlasses, sleepHours, exerciseMinutes, habitsProgress,
-}
-
-// ✅ GOOD — include all health (and relevant cross-module) user data
-const insightContext = {
-  waterGlasses, sleepHours, exerciseMinutes, habitsProgress,
-  latestWeightKg, heightCm, idealWeightKg, bmi, bmiLabel,
-  healthyWeightDelta, idealWeightDelta, recentWeights, moodToday,
-  // …other modules the user has data for, unless prompt says omit
-}
-```
-
-## Secrets
-
-Still never send passwords, OTPs, reset tokens, raw refresh tokens, or other secrets. Full **product data** ≠ secrets.
+1. Every service call takes `userId` and filters `where: { user_id: userId }` (or equivalent).
+2. Prefer one shared assembler (`buildLiveContext`) over per-page subsets.
+3. Cache keys include `userId` + context fingerprint.
+4. Never invent numbers; empty modules → empty/null in context, not silent omission without reason.
+5. Keep blocks compact (summaries + recent items); full note bodies / entire histories may be truncated, but the user must still be answerable from real data.
 
 ## Related
 
-Also follow `.cursor/rules/assistant-user-context.mdc` for profile field sync into Groq user context.
+- `.cursor/rules/assistant-user-context.mdc` — profile fields into Groq user context
+- `.cursor/rules/astra-ai-app-knowledge.mdc` — product UI map (not private user rows)

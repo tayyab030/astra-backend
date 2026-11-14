@@ -10,5 +10,6 @@ import { GoalsService } from './goals.service';
   imports: [TypeOrmModule.forFeature([Goal, GoalMilestone]), TasksModule],
   controllers: [GoalsController],
   providers: [GoalsService],
+  exports: [GoalsService],
 })
 export class GoalsModule {}

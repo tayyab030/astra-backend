@@ -16,4 +16,4 @@ Whenever you add or change **user profile / account info** in this project (User
 
 Goal: the logged-in user's complete public profile (including AI settings: `ai_voice`, `ai_voice_mode`, `ai_personality`, `ai_insights`, `ai_data_scope`) is always available to Groq for that session, and future user-info features inherit the same access path. Apply AI settings via `buildAiSettingsBlock` / context builders when changing assistant behavior.
 
-Also follow `.cursor/rules/ai-full-user-data.mdc`: module/page AI context (insights, chat, etc.) must include **all Life OS user data by default**; omit a module only when the human prompt explicitly says so.
+Also follow `.cursor/rules/ai-full-user-data.mdc` (A–Z signed-in user module data in chat) and `.cursor/rules/assistant-data-isolation.mdc` (never other users / never full DB).
