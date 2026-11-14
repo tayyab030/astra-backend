@@ -37,6 +37,12 @@ function matchesPrefix(path: string, prefix: string): boolean {
 }
 
 export function routeRequiresAuth(url: string): boolean {
+  // Root liveness probe (/health) is public. Life OS stays at /api/health (auth required).
+  const rawPath = url.split('?')[0].replace(/\/+$/, '') || '/';
+  if (rawPath === '/health') {
+    return false;
+  }
+
   const path = normalizeRoutePath(url);
 
   for (const publicPrefix of publicRoutePrefixes) {
