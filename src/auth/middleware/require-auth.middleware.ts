@@ -26,6 +26,11 @@ export class RequireAuthMiddleware implements NestMiddleware {
   constructor(private readonly authService: AuthService) {}
 
   async use(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    // CORS preflight must never require credentials.
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+
     const url = req.originalUrl ?? req.url;
     if (!routeRequiresAuth(url)) {
       return next();
