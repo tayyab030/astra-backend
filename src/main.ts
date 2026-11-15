@@ -18,6 +18,23 @@ function isPrivateLanHost(hostname: string) {
   );
 }
 
+/** Always allowed production frontends (in addition to CORS_ORIGINS / FRONTEND_URL). */
+const BUILTIN_CORS_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:8081',
+  'https://astra-frontend-lemon.vercel.app',
+  'https://farm-management-nu.vercel.app',
+];
+
+function isVercelPreviewOrigin(hostname: string) {
+  return (
+    hostname.endsWith('.vercel.app') &&
+    (hostname.includes('astra-frontend') ||
+      hostname.includes('farm-management'))
+  );
+}
+
 function isAllowedOrigin(origin?: string) {
   if (!origin) {
     return true;
@@ -30,7 +47,10 @@ function isAllowedOrigin(origin?: string) {
     process.env.FRONTEND_URL ??
     process.env.FRONTEND_LOGIN_URL?.replace(/\/login\/?$/, '') ??
     'http://localhost:3000';
-  const allowed = configured?.length ? configured : [fallbackOrigin];
+  const allowed = [
+    ...BUILTIN_CORS_ORIGINS,
+    ...(configured?.length ? configured : [fallbackOrigin]),
+  ];
 
   if (allowed.includes('*') || allowed.includes(origin)) {
     return true;
@@ -38,10 +58,13 @@ function isAllowedOrigin(origin?: string) {
 
   try {
     const { hostname, protocol } = new URL(origin);
-    return (
-      (protocol === 'http:' || protocol === 'https:') &&
-      isPrivateLanHost(hostname)
-    );
+    if (protocol !== 'http:' && protocol !== 'https:') {
+      return false;
+    }
+    if (isPrivateLanHost(hostname)) {
+      return true;
+    }
+    return isVercelPreviewOrigin(hostname);
   } catch {
     return false;
   }
