@@ -5,6 +5,8 @@ export const ANIMAL_HEALTH_STATUSES = [
   'Sick',
   'Recovering',
   'Vaccination Due',
+  'Sold',
+  'Lost',
 ] as const;
 export const ANIMAL_VACCINATION_STATUSES = [
   'Not Vaccinated',

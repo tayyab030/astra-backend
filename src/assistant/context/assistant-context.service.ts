@@ -65,6 +65,13 @@ export class AssistantContextService {
       const healthStart = assistantDateDaysAgo(14);
       const timeStart = assistantDateDaysAgo(7);
 
+      const now = new Date();
+      const wealthPeriod = {
+        mode: 'month' as const,
+        year: now.getFullYear(),
+        month: now.getMonth() + 1,
+      };
+
       const [
         tasksResult,
         projectsResult,
@@ -73,7 +80,8 @@ export class AssistantContextService {
         healthResult,
         notesResult,
         timeResult,
-        wealthResult,
+        personalWealthResult,
+        farmWealthResult,
         prayerResult,
       ] = await Promise.all([
         this.safeLoad('tasks', userId, () =>
@@ -104,15 +112,18 @@ export class AssistantContextService {
             end_date: today,
           }),
         ),
-        this.safeLoad('wealth', userId, async () => {
-          const now = new Date();
-          return this.wealthService.getDashboard(userId, {
-            mode: 'month',
-            year: now.getFullYear(),
-            month: now.getMonth() + 1,
+        this.safeLoad('wealth-personal', userId, () =>
+          this.wealthService.getDashboard(userId, {
+            ...wealthPeriod,
             scope: 'personal',
-          });
-        }),
+          }),
+        ),
+        this.safeLoad('wealth-farm', userId, () =>
+          this.wealthService.getDashboard(userId, {
+            ...wealthPeriod,
+            scope: 'farm',
+          }),
+        ),
         this.safeLoad('prayer', userId, () =>
           this.prayerService.getTodayTimingsForUser(userId),
         ),
@@ -152,12 +163,27 @@ export class AssistantContextService {
         parts.push(buildTimeTrackContextBlock(timeResult));
       }
 
-      if (wealthResult) {
+      if (personalWealthResult || farmWealthResult) {
         try {
           const currency =
             (user.currency || 'USD').trim().toUpperCase() || 'USD';
           const rates = await fetchUsdExchangeRates();
-          parts.push(buildWealthContextBlock(wealthResult, currency, rates));
+          if (personalWealthResult) {
+            parts.push(
+              buildWealthContextBlock(personalWealthResult, currency, rates, {
+                scope: 'personal',
+              }),
+            );
+          }
+          if (farmWealthResult) {
+            // FarmPilot amounts are as-entered (no FX).
+            parts.push(
+              buildWealthContextBlock(farmWealthResult, currency, rates, {
+                scope: 'farm',
+                asEntered: true,
+              }),
+            );
+          }
         } catch (error) {
           this.logger.warn(
             `Wealth context format skipped for ${userId}: ${

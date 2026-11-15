@@ -9,6 +9,8 @@ export const WEALTH_FARM_EXPENSE_CATEGORIES = [
   { value: 'utilities', label: 'Utilities' },
   { value: 'transport', label: 'Transportation' },
   { value: 'marketing', label: 'Marketing' },
+  { value: 'livestock', label: 'Livestock Purchase' },
+  { value: 'livestock_loss', label: 'Livestock Loss' },
   { value: 'other', label: 'Miscellaneous' },
 ] as const;
 

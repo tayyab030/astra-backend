@@ -88,6 +88,9 @@ const USER_DATA_TABLES = [
   'wealth_category_budgets',
   'wealth_savings',
   'wealth_transactions',
+  'farm_production_records',
+  'farm_animals',
+  'farm_animal_groups',
   'auth_sessions',
 ] as const;
 

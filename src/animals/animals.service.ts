@@ -83,7 +83,9 @@ export class AnimalsService {
     if (dto.date_of_birth !== undefined) {
       animal.date_of_birth = dto.date_of_birth;
     }
-    if (dto.sex !== undefined) animal.sex = dto.sex;
+    if (dto.sex !== undefined) {
+      animal.sex = dto.sex?.trim() ? dto.sex.trim() : null;
+    }
     if (dto.weight !== undefined) {
       animal.weight =
         dto.weight === null ? null : Number(dto.weight).toFixed(2);
